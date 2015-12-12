@@ -18,6 +18,9 @@ server {
     try_files $uri $uri/ =404;
   }
 
+  error_log  /etc/nginx/logs/example.com_error.log warn;
+  access_log /etc/nginx/logs/example.com_access.log main;
+
   error_page 404 /404.html;
   include conf.d/basic.conf;
 }

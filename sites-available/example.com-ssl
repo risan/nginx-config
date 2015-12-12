@@ -28,6 +28,11 @@ server {
   server_name example.com;
 
   include conf.d/directive-only/ssl.conf;
+  ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+  ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+
+  include conf.d/directive-only/ssl-stapling.conf;
+  ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
 
   root /sites/example.com/public;
   index index.html index.htm;
@@ -35,6 +40,9 @@ server {
   location / {
     try_files $uri $uri/ =404;
   }
+
+  error_log  /etc/nginx/logs/example.com_error.log warn;
+  access_log /etc/nginx/logs/example.com_access.log main;
 
   error_page 404 /404.html;
   include conf.d/basic.conf;
