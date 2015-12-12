@@ -1,0 +1,41 @@
+server {
+  listen 80;
+  listen [::]:80;
+  server_name example.com www.example.com;
+
+  return 301 https://example.com$request_uri;
+}
+
+server {
+  listen 443 ssl spdy;
+  listen [::]:443 ssl spdy;
+  server_name www.example.com;
+
+  include conf.d/directive-only/ssl.conf;
+  ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+  ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+
+  include conf.d/directive-only/ssl-stapling.conf;
+  ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+
+  return 301 https://example.com$request_uri;
+}
+
+server {
+  listen 443 ssl spdy;
+  listen [::]:443 ssl spdy;
+  charset utf-8;
+  server_name example.com;
+
+  include conf.d/directive-only/ssl.conf;
+
+  root /sites/example.com/public;
+  index index.html index.htm;
+
+  location / {
+    try_files $uri $uri/ =404;
+  }
+
+  error_page 404 /404.html;
+  include conf.d/basic.conf;
+}
