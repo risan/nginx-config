@@ -1,75 +1,75 @@
-## Nginx Server Configuration for Ubuntu
+# Nginx Configuration for Ubuntu
 
-This is my personal collection of Nginx server configuration for Ubuntu 14.04 Trusty. Heavily inspired by the [H5BP Server Configs Nginx](https://github.com/h5bp/server-configs-nginx).
+This is my personal collection of Nginx server configuration snippets for Ubuntu 14.04 Trusty. Originally came from the [H5BP Server Configs Nginx](https://github.com/h5bp/server-configs-nginx).
 
 ## Install Nginx
 
 To install Nginx on your Ubuntu machine, run the following commands:
 
-```
+```bash
 sudo apt-get update
 sudo apt-get install nginx
 ```
 
 If you installed Nginx on your local machine, verify it by visiting:
 
-```
+```bash
 http://localhost
 ```
 
 Or if you installed it on the remote machine and it's publicily available, visit the IP address:
 
-```
+```bash
 http://XXX.XXX.XXX.XXX
 ```
 
 You can also check if the Nginx server is running by excecuting the following command:
 
-```
+```bash
 /etc/init.d/nginx status
 ```
 
 Some useful commands to start / stop/ restart the Nginx server:
 
-```
+```bash
 sudo service nginx start
 sudo service nginx stop
 sudo service nginx restart
 ```
 
-## Download This Nginx Configuration
+## Download Nginx Configuration
 
 Once you have the Nginx server installed, download this Nginx configuration files to your machine.
 
-First, we need to stop the Nginx service:
+But first, we need to stop the Nginx service:
 
-```
+```bash
 sudo service nginx stop
 ```
 
 Backup the original Nginx configuration directory:
 
-```
+```bash
 sudo mv /etc/nginx /etc/nginx-original
 ```
 
-Make sure that you have Git installed on your machine. Then download this repository to the `/etc/nginx/` directory like so:
+Make sure that you have Git installed on your machine. Then download this repository to replace the `/etc/nginx/` directory using git command:
 
-```
+```bash
 sudo git clone https://github.com/risan/nginx-config-ubuntu.git /etc/nginx
 ```
 
-## Setup Virtual Host (Server Block)
+## Setup Virtual Host (Server Blocks)
 
-To set a virtual host or we called it *Server Block* on Nginx, we simply need to copy the `example.com` file on `/etc/nginx/sites-available` directory:
+To set a virtual host or we called it *Server Blocks* on Nginx, we simply need to copy the available `example.com` config file on `/etc/nginx/sites-available` directory. For example, we'll be creating a new config file for `your-website.com`:
 
-```
+```bash
 sudo cp /etc/nginx/sites-available/example.com /etc/nginx/sites-available/your-website.com
 ```
 
-Open up the copied configuration file to see and edit the directives according to your own need:
+Now open up the copied configuration file to see and edit the directives according to your own need:
 
-```
+```bash
 sudo nano /etc/nginx/sites-available/your-website.com
 ```
 
@@ -77,7 +77,7 @@ sudo nano /etc/nginx/sites-available/your-website.com
 
 The first server block, will redirect the request from `www.example.com` to the `example.com`.
 
-```
+```nginx
 server {
   listen 80;
   listen [::]:80;
