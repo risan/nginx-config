@@ -39,9 +39,7 @@ sudo service nginx restart
 
 ## Download Nginx Configuration
 
-Once you have the Nginx server installed, download this Nginx configuration files to your machine.
-
-But first, we need to stop the Nginx service:
+Once you have the Nginx server installed, download this Nginx configuration files to your machine. But first, we need to stop the Nginx service:
 
 ```bash
 sudo service nginx stop
@@ -86,13 +84,13 @@ server {
 }
 ```
 
-To configure this first server block, simply replacing the `example.com` value with your own domain name.
+To configure this first server block, simply replace the `example.com` values with your own domain name.
 
 ### The second server block
 
-The second server block will actually process the HTTP request.
+The second server block will actually process the HTTP request. The second server block will actually look like this:
 
-```
+```nginx
 server {
   listen 80;
   listen [::]:80;
@@ -114,13 +112,13 @@ server {
 }
 ```
 
-There are few things that you can configure on this second server block:
+There are few things that you can configure on the second server block:
 
 **Update Server Name**
 
 Update the `server_name` directive to reflect your domain name:
 
-```
+```nginx
 server_name your-website.com
 ```
 
@@ -136,14 +134,16 @@ root /var/www/your-website.com/public
 
 And lastly we can specify the log files path. We recomend to store the log files at `/etc/nginx/logs` directory and each virtual host has its own log file like so:
 
-```
+```nginx
 error_log  /etc/nginx/logs/your-website.com_error.log warn;
 access_log /etc/nginx/logs/your-website.com_access.log main;
 ```
 
 ### Complete Example
 
-```
+Here is the complete example of the server blocks for `example.com` domain:
+
+```nginx
 server {
   listen 80;
   listen [::]:80;
@@ -174,15 +174,15 @@ server {
 
 ## Setup SSL Server Block
 
-If you want to use SSL for your website, copy the configuration file from `/etc/nginx/sites-available/example.com-ssl`
+If you want to use SSL for your website, copy the configuration file from `/etc/nginx/sites-available/example.com-ssl` instead.
 
-```
+```bash
 sudo cp /etc/nginx/sites-available/example.com-ssl /etc/nginx/sites-available/your-website.com
 ```
 
 Once it's get copied, open it up to configure some directives:
 
-```
+```bash
 sudo nano /etc/nginx/sites-available/your-website.com
 ```
 
@@ -190,7 +190,7 @@ sudo nano /etc/nginx/sites-available/your-website.com
 
 The first server block will redirect non-SSL request both from `http://example.com` and `http://www.example.com` to `https://example.com`.
 
-```
+```nginx
 server {
   listen 80;
   listen [::]:80;
@@ -200,13 +200,13 @@ server {
 }
 ```
 
-To configure this first server block, simply replacing the `example.com` text with your own domain name.
+To configure the first server block, simply replace the `example.com` text with your own domain name.
 
 ### The Second Server Block
 
 The second server block will redirect traffic from `https://www.example.com` to the `https://example.com`. It also specifies the SSL certificates path.
 
-```
+```nginx
 server {
   listen 443 ssl spdy;
   listen [::]:443 ssl spdy;
@@ -227,9 +227,9 @@ On the second server block, we need to configure several things:
 
 **Update Server Name**
 
-We need to update the `server_name` directive to reflect our own server name:
+We need to update the `server_name` directive to match our own domain name:
 
-```
+```nginx
 server_name your-website.com
 ```
 
@@ -237,7 +237,7 @@ server_name your-website.com
 
 Next we need to specify the SSL certificate path. We recomend you to create a symlink from your original certificate location to the `/etc/nginx/ssl` directory.
 
-```
+```nginx
 ssl_certificate /etc/nginx/ssl/ssl-certificate.crt;
 ssl_certificate_key /etc/nginx/ssl/ssl-secret-key.key;
 ```
@@ -246,13 +246,13 @@ ssl_certificate_key /etc/nginx/ssl/ssl-secret-key.key;
 
 If you want to enable SSL stapling, also specify the `ssl_trusted_certificate` directive to your trusted CS certificate file:
 
-```
+```nginx
 ssl_trusted_certificate /etc/nginx/ssl/your-website-ca.crt
 ```
 
 If you want to disable SSL sapling, comment out the following directives:
 
-```
+```nginx
 # include conf.d/directive-only/ssl-stapling.conf;
 # ssl_trusted_certificate /etc/nginx/ssl/risan.io/chain.pem;
 ```
@@ -261,15 +261,15 @@ If you want to disable SSL sapling, comment out the following directives:
 
 Also don't forget to update the redirection URI at the bottom of the server block.
 
-```
+```nginx
 return 301 https://your-website.com$request_uri;
 ```
 
 ### The Third Server Block
 
-The third server block will actually process the request.
+The third server block will actually process the request. This last server block will look exactly like this:
 
-```
+```nginx
 server {
   listen 443 ssl spdy;
   listen [::]:443 ssl spdy;
@@ -298,11 +298,11 @@ server {
 }
 ```
 
-On this last server block, we need to configure the following directives:
+On the last server block, we need to configure the following directives:
 
 **Update Server Name**
 
-Update the `server_name` to macth your domain name:
+Just like on the previous server block, update the `server_name` to match your domain name like so:
 
 ```
 server_name your-website.com
@@ -310,7 +310,7 @@ server_name your-website.com
 
 **SSL Configuration**
 
-The SSL configuration is identical to the second server block:
+The SSL configuration directive is identical to the second server block:
 
 ```
 include conf.d/directive-only/ssl.conf;
@@ -323,9 +323,9 @@ ssl_trusted_certificate /path/to/trusted-ca-certificate.crt;
 
 **Update Document Root**
 
-Update the `root` directive to the document root of your website. For example if our website document root is located in `/var/www/your-website.com/public`, the directive would be:
+Update the `root` directive to the document root of your website. For example if our website document root is located in `/var/www/your-website.com/public`, then this directive would look like this:
 
-```
+```nginx
 root /var/www/your-website.com/public;
 ```
 
@@ -333,35 +333,37 @@ root /var/www/your-website.com/public;
 
 Lastly, specify the log files location. We recommend you to store log files on `/etc/nginx/logs` directory and each virtual host has their own log file.
 
-```
+```nginx
 error_log  /etc/nginx/logs/example.com_error.log warn;
 access_log /etc/nginx/logs/example.com_access.log main;
 ```
 
 ### Complete Example
 
+Here is the complete example of the server blocks that use SSL protocol:
+
 ```
 server {
   listen 80;
   listen [::]:80;
-  server_name risan.io www.risan.io;
+  server_name example.com www.example.com;
 
-  return 301 https://risan.io$request_uri;
+  return 301 https://example.com$request_uri;
 }
 
 server {
   listen 443 ssl spdy;
   listen [::]:443 ssl spdy;
-  server_name www.risan.io;
+  server_name www.example.com;
 
   include conf.d/directive-only/ssl.conf;
-  ssl_certificate /etc/nginx/ssl/risan.io/fullchain.pem;
-  ssl_certificate_key /etc/nginx/ssl/risan.io/privkey.pem;
+  ssl_certificate /path/to/ssl-certificate.crt;
+  ssl_certificate_key /path/to/ssl-private-key.key;
 
   include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate /etc/nginx/ssl/risan.io/chain.pem;
+  ssl_trusted_certificate /path/to/ca-certificate.crt;
 
-  return 301 https://risan.io$request_uri;
+  return 301 https://example.com$request_uri;
 }
 
 server {
@@ -375,7 +377,7 @@ server {
   ssl_certificate_key /path/to/ssl-private-key.key;
 
   include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate path/to/ca-certificate.crt;
+  ssl_trusted_certificate /path/to/ca-certificate.crt;
 
   root /path/to/document-root;
   index index.html index.htm;
@@ -384,8 +386,8 @@ server {
     try_files $uri $uri/ =404;
   }
 
-  error_log  /etc/nginx/logs/your-website.com_error.log warn;
-  access_log /etc/nginx/logs/your-website.com.log main;
+  error_log  /etc/nginx/logs/example.com_error.log warn;
+  access_log /etc/nginx/logs/example.com.log main;
 
   error_page 404 /404.html;
   include conf.d/basic.conf;
