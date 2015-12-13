@@ -304,7 +304,7 @@ On the last server block, we need to configure the following directives:
 
 Just like on the previous server block, update the `server_name` to match your domain name like so:
 
-```
+```nginx
 server_name your-website.com
 ```
 
@@ -312,7 +312,7 @@ server_name your-website.com
 
 The SSL configuration directive is identical to the second server block:
 
-```
+```nginx
 include conf.d/directive-only/ssl.conf;
 ssl_certificate /path/to/ssl-certificate.crt;
 ssl_certificate_key /path/to/ssl-private-key.key;
@@ -342,7 +342,7 @@ access_log /etc/nginx/logs/example.com_access.log main;
 
 Here is the complete example of the server blocks that use SSL protocol:
 
-```
+```nginx
 server {
   listen 80;
   listen [::]:80;
