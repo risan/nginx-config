@@ -77,10 +77,14 @@ The first server block, will redirect the request from `www.example.com` to the 
 
 ```nginx
 server {
-  listen 80;
-  listen [::]:80;
-  server_name www.example.com;
-  return 301 $scheme://example.com$request_uri;
+    listen 80;
+    listen [::]:80;
+
+    # The www host name.
+    server_name www.example.com;
+
+    # Redirect to the non-www.
+    return 301 $scheme://example.com$request_uri;
 }
 ```
 
@@ -92,23 +96,35 @@ The second server block will actually process the HTTP request. The second serve
 
 ```nginx
 server {
-  listen 80;
-  listen [::]:80;
-  charset utf-8;
-  server_name example.com;
+    listen 80;
+    listen [::]:80;
 
-  root /path/to/document-root;
-  index index.html index.htm;
+    # The host name.
+    server_name example.com;
 
-  location / {
-    try_files $uri $uri/ =404;
-  }
+    # The root path.
+    root /etc/share/nginx/exmaple.com;
 
-  error_log  /etc/nginx/logs/example.com_error.log warn;
-  access_log /etc/nginx/logs/example.com_access.log main;
+    # Specify charset.
+    charset utf-8;
 
-  error_page 404 /404.html;
-  include conf.d/basic.conf;
+    # Index file.
+    index index.html index.htm;
+
+    # Try file then directory, or else 404.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Custom 404 error page.
+    error_page 404 /404.html;
+
+    # Log file path.
+    error_log  /etc/nginx/logs/example.com_error.log warn;
+    access_log /etc/nginx/logs/example.com_access.log main;
+
+    # Include basic config.
+    include conf.d/basic.conf;
 }
 ```
 
@@ -145,30 +161,46 @@ Here is the complete example of the server blocks for `example.com` domain:
 
 ```nginx
 server {
-  listen 80;
-  listen [::]:80;
-  server_name www.example.com;
-  return 301 $scheme://example.com$request_uri;
+    listen 80;
+    listen [::]:80;
+
+    # The www host name.
+    server_name www.example.com;
+
+    # Redirect to the non-www.
+    return 301 $scheme://example.com$request_uri;
 }
 
 server {
-  listen 80;
-  listen [::]:80;
-  charset utf-8;
-  server_name risan.io;
+    listen 80;
+    listen [::]:80;
 
-  root /var/www/example.com/public;
-  index index.html index.htm;
+    # The host name.
+    server_name example.com;
 
-  location / {
-    try_files $uri $uri/ =404;
-  }
+    # The root path.
+    root /etc/share/nginx/exmaple.com;
 
-  error_log  /etc/nginx/logs/example.com_error.log warn;
-  access_log /etc/nginx/logs/example.com_access.log main;
+    # Specify charset.
+    charset utf-8;
 
-  error_page 404 /404.html;
-  include conf.d/basic.conf;
+    # Index file.
+    index index.html index.htm;
+
+    # Try file then directory, or else 404.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Custom 404 error page.
+    error_page 404 /404.html;
+
+    # Log file path.
+    error_log  /etc/nginx/logs/example.com_error.log warn;
+    access_log /etc/nginx/logs/example.com_access.log main;
+
+    # Include basic config.
+    include conf.d/basic.conf;
 }
 ```
 
@@ -192,11 +224,14 @@ The first server block will redirect non-SSL request both from `http://example.c
 
 ```nginx
 server {
-  listen 80;
-  listen [::]:80;
-  server_name example.com www.example.com;
+    listen 80;
+    listen [::]:80;
 
-  return 301 https://example.com$request_uri;
+    # The www and non-www http hostnames.
+    server_name example.com www.example.com;
+
+    # Redirect to non-www https hostname.
+    return 301 https://example.com$request_uri;
 }
 ```
 
@@ -208,18 +243,27 @@ The second server block will redirect traffic from `https://www.example.com` to 
 
 ```nginx
 server {
-  listen 443 ssl spdy;
-  listen [::]:443 ssl spdy;
-  server_name www.example.com;
+    listen 443 ssl spdy;
+    listen [::]:443 ssl spdy;
 
-  include conf.d/directive-only/ssl.conf;
-  ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
-  ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+    # The www hostname.
+    server_name www.example.com;
 
-  include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+    # SSL config file.
+    include conf.d/directive-only/ssl.conf;
 
-  return 301 https://example.com$request_uri;
+    # SSL certificate.
+    ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+
+    # Enable OCSP stapling.
+    include conf.d/directive-only/ssl-stapling.conf;
+
+    # Intermediate certificate.
+    ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+
+    # Redirect to non-www https hostname.
+    return 301 https://example.com$request_uri;
 }
 ```
 
@@ -250,11 +294,14 @@ If you want to enable SSL stapling, also specify the `ssl_trusted_certificate` d
 ssl_trusted_certificate /etc/nginx/ssl/your-website-ca.crt
 ```
 
-If you want to disable SSL sapling, comment out the following directives:
+If you want to disable SSL stapling, comment out the following directives:
 
 ```nginx
+# Enable OCSP stapling.
 # include conf.d/directive-only/ssl-stapling.conf;
-# ssl_trusted_certificate /etc/nginx/ssl/risan.io/chain.pem;
+
+# Intermediate certificate.
+# ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
 ```
 
 **Update the Redirection URI**
@@ -271,30 +318,48 @@ The third server block will actually process the request. This last server block
 
 ```nginx
 server {
-  listen 443 ssl spdy;
-  listen [::]:443 ssl spdy;
-  charset utf-8;
-  server_name example.com;
+    listen 443 ssl spdy;
+    listen [::]:443 ssl spdy;
 
-  include conf.d/directive-only/ssl.conf;
-  ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
-  ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+    # The host name.
+    server_name example.com;
 
-  include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+    # SSL config file.
+    include conf.d/directive-only/ssl.conf;
 
-  root /path/to/document-root;
-  index index.html index.htm;
+    # SSL certificate.
+    ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
 
-  location / {
-    try_files $uri $uri/ =404;
-  }
+    # Enable OCSP stapling.
+    include conf.d/directive-only/ssl-stapling.conf;
 
-  error_log  /etc/nginx/logs/example.com_error.log warn;
-  access_log /etc/nginx/logs/example.com_access.log main;
+    # Intermediate certificate.
+    ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
 
-  error_page 404 /404.html;
-  include conf.d/basic.conf;
+    # The root path.
+    root /sites/example.com/public;
+
+    # Specify charset.
+    charset utf-8;
+
+    # Index file.
+    index index.html index.htm;
+
+    # Try file then directory, or else 404.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Custom 404 error page.
+    error_page 404 /404.html;
+
+    # Log file path.
+    error_log  /etc/nginx/logs/example.com-ssl_error.log warn;
+    access_log /etc/nginx/logs/example.com-ssl_access.log main;
+
+    # Include basic config.
+    include conf.d/basic.conf;
 }
 ```
 
@@ -313,12 +378,18 @@ server_name your-website.com
 The SSL configuration directive is identical to the second server block:
 
 ```nginx
+# SSL config file.
 include conf.d/directive-only/ssl.conf;
-ssl_certificate /path/to/ssl-certificate.crt;
-ssl_certificate_key /path/to/ssl-private-key.key;
 
+# SSL certificate.
+ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+
+# Enable OCSP stapling.
 include conf.d/directive-only/ssl-stapling.conf;
-ssl_trusted_certificate /path/to/trusted-ca-certificate.crt;
+
+# Intermediate certificate.
+ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
 ```
 
 **Update Document Root**
@@ -344,52 +415,82 @@ Here is the complete example of the server blocks that use SSL protocol:
 
 ```nginx
 server {
-  listen 80;
-  listen [::]:80;
-  server_name example.com www.example.com;
+    listen 80;
+    listen [::]:80;
 
-  return 301 https://example.com$request_uri;
+    # The www and non-www http hostnames.
+    server_name example.com www.example.com;
+
+    # Redirect to non-www https hostname.
+    return 301 https://example.com$request_uri;
 }
 
 server {
-  listen 443 ssl spdy;
-  listen [::]:443 ssl spdy;
-  server_name www.example.com;
+    listen 443 ssl spdy;
+    listen [::]:443 ssl spdy;
 
-  include conf.d/directive-only/ssl.conf;
-  ssl_certificate /path/to/ssl-certificate.crt;
-  ssl_certificate_key /path/to/ssl-private-key.key;
+    # The www hostname.
+    server_name www.example.com;
 
-  include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate /path/to/ca-certificate.crt;
+    # SSL config file.
+    include conf.d/directive-only/ssl.conf;
 
-  return 301 https://example.com$request_uri;
+    # SSL certificate.
+    ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+
+    # Enable OCSP stapling.
+    include conf.d/directive-only/ssl-stapling.conf;
+
+    # Intermediate certificate.
+    ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+
+    # Redirect to non-www https hostname.
+    return 301 https://example.com$request_uri;
 }
 
 server {
-  listen 443 ssl spdy;
-  listen [::]:443 ssl spdy;
-  charset utf-8;
-  server_name example.com;
+    listen 443 ssl spdy;
+    listen [::]:443 ssl spdy;
 
-  include conf.d/directive-only/ssl.conf;
-  ssl_certificate /path/to/ssl-certificate.crt;
-  ssl_certificate_key /path/to/ssl-private-key.key;
+    # The host name.
+    server_name example.com;
 
-  include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate /path/to/ca-certificate.crt;
+    # SSL config file.
+    include conf.d/directive-only/ssl.conf;
 
-  root /path/to/document-root;
-  index index.html index.htm;
+    # SSL certificate.
+    ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
 
-  location / {
-    try_files $uri $uri/ =404;
-  }
+    # Enable OCSP stapling.
+    include conf.d/directive-only/ssl-stapling.conf;
 
-  error_log  /etc/nginx/logs/example.com_error.log warn;
-  access_log /etc/nginx/logs/example.com.log main;
+    # Intermediate certificate.
+    ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
 
-  error_page 404 /404.html;
-  include conf.d/basic.conf;
+    # The root path.
+    root /sites/example.com/public;
+
+    # Specify charset.
+    charset utf-8;
+
+    # Index file.
+    index index.html index.htm;
+
+    # Try file then directory, or else 404.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Custom 404 error page.
+    error_page 404 /404.html;
+
+    # Log file path.
+    error_log  /etc/nginx/logs/example.com-ssl_error.log warn;
+    access_log /etc/nginx/logs/example.com-ssl_access.log main;
+
+    # Include basic config.
+    include conf.d/basic.conf;
 }
 ```
