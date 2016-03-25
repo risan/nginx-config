@@ -1,4 +1,5 @@
+# Drop requests for unknown hosts if there is no default server.
 server {
-  listen 80 default_server;
-  return 444;
+    listen 80 default_server;
+    return 444;
 }

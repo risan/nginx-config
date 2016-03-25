@@ -1,49 +1,79 @@
 server {
-  listen 80;
-  listen [::]:80;
-  server_name example.com www.example.com;
+    listen 80;
+    listen [::]:80;
 
-  return 301 https://example.com$request_uri;
+    # The www and non-www http hostnames.
+    server_name example.com www.example.com;
+
+    # Redirect to non-www https hostname.
+    return 301 https://example.com$request_uri;
 }
 
 server {
-  listen 443 ssl spdy;
-  listen [::]:443 ssl spdy;
-  server_name www.example.com;
+    listen 443 ssl spdy;
+    listen [::]:443 ssl spdy;
 
-  include conf.d/directive-only/ssl.conf;
-  ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
-  ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+    # The www hostname.
+    server_name www.example.com;
 
-  include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+    # SSL config file.
+    include conf.d/directive-only/ssl.conf;
 
-  return 301 https://example.com$request_uri;
+    # SSL certificate.
+    ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+
+    # Enable OCSP stapling.
+    include conf.d/directive-only/ssl-stapling.conf;
+
+    # Intermediate certificate.
+    ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+
+    # Redirect to non-www https hostname.
+    return 301 https://example.com$request_uri;
 }
 
 server {
-  listen 443 ssl spdy;
-  listen [::]:443 ssl spdy;
-  charset utf-8;
-  server_name example.com;
+    listen 443 ssl spdy;
+    listen [::]:443 ssl spdy;
 
-  include conf.d/directive-only/ssl.conf;
-  ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
-  ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+    # The host name.
+    server_name example.com;
 
-  include conf.d/directive-only/ssl-stapling.conf;
-  ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
+    # SSL config file.
+    include conf.d/directive-only/ssl.conf;
 
-  root /sites/example.com/public;
-  index index.html index.htm;
+    # SSL certificate.
+    ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
 
-  location / {
-    try_files $uri $uri/ =404;
-  }
+    # Enable OCSP stapling.
+    include conf.d/directive-only/ssl-stapling.conf;
 
-  error_log  /etc/nginx/logs/example.com_error.log warn;
-  access_log /etc/nginx/logs/example.com_access.log main;
+    # Intermediate certificate.
+    ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
 
-  error_page 404 /404.html;
-  include conf.d/basic.conf;
+    # The root path.
+    root /sites/example.com/public;
+
+    # Specify charset.
+    charset utf-8;
+
+    # Index file.
+    index index.html index.htm;
+
+    # Try file then directory, or else 404.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Custom 404 error page.
+    error_page 404 /404.html;
+
+    # Log file path.
+    error_log  /etc/nginx/logs/ssl.example.com_error.log warn;
+    access_log /etc/nginx/logs/ssl.example.com_access.log main;
+
+    # Include basic config.
+    include conf.d/basic.conf;
 }

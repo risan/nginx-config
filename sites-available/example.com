@@ -1,26 +1,42 @@
 server {
-  listen 80;
-  listen [::]:80;
-  server_name www.example.com;
-  return 301 $scheme://example.com$request_uri;
+    listen 80;
+    listen [::]:80;
+
+    # The www host name.
+    server_name www.example.com;
+
+    # Redirect to the non-www.
+    return 301 $scheme://example.com$request_uri;
 }
 
 server {
-  listen 80;
-  listen [::]:80;
-  charset utf-8;
-  server_name example.com;
+    listen 80;
+    listen [::]:80;
 
-  root /sites/example.com/public;
-  index index.html index.htm;
+    # The host name.
+    server_name example.com;
 
-  location / {
-    try_files $uri $uri/ =404;
-  }
+    # The root path.
+    root /etc/share/nginx/exmaple.com;
 
-  error_log  /etc/nginx/logs/example.com_error.log warn;
-  access_log /etc/nginx/logs/example.com_access.log main;
+    # Specify charset.
+    charset utf-8;
 
-  error_page 404 /404.html;
-  include conf.d/basic.conf;
+    # Index file.
+    index index.html index.htm;
+
+    # Try file then directory, or else 404.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Custom 404 error page.
+    error_page 404 /404.html;
+
+    # Log file path.
+    error_log  /etc/nginx/logs/example.com_error.log warn;
+    access_log /etc/nginx/logs/example.com_access.log main;
+
+    # Include basic config.
+    include conf.d/basic.conf;
 }
