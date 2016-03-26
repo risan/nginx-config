@@ -17,7 +17,7 @@ server {
     server_name example.com;
 
     # The root path.
-    root /etc/share/nginx/example.com;
+    root /usr/share/nginx/example.com;
 
     # Specify charset.
     charset utf-8;

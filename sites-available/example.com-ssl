@@ -54,7 +54,7 @@ server {
     ssl_trusted_certificate /etc/nginx/ssl/example.com/chain.pem;
 
     # The root path.
-    root /sites/example.com/public;
+    root /usr/share/nginx/example.com;
 
     # Specify charset.
     charset utf-8;
