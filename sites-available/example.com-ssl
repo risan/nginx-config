@@ -19,6 +19,9 @@ server {
     # SSL config file.
     include conf.d/directive-only/ssl.conf;
 
+    # Stronger DH group.
+    include conf.d/directive-only/ssl-dh.conf;
+
     # SSL certificate.
     ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
@@ -42,6 +45,9 @@ server {
 
     # SSL config file.
     include conf.d/directive-only/ssl.conf;
+
+    # Stronger DH group.
+    include conf.d/directive-only/ssl-dh.conf;
 
     # SSL certificate.
     ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
