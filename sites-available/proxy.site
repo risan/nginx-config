@@ -1,0 +1,37 @@
+server {
+    listen 80;
+    listen [::]:80;
+
+    # The www host name.
+    server_name www.example.com;
+
+    # Redirect to the non-www.
+    return 301 $scheme://example.com$request_uri;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    # The host name.
+    server_name example.com;
+
+    # Specify charset.
+    charset utf-8;
+
+    # Proxy.
+    location / {
+        proxy_pass http://localhost:3000;
+        include conf.d/directive-only/reverse-proxy.conf;
+    }
+
+    # Custom 404 error page.
+    error_page 404 /404.html;
+
+    # Log file path.
+    error_log  /etc/nginx/logs/example.com_error.log warn;
+    access_log /etc/nginx/logs/example.com_access.log main;
+
+    # Include basic config.
+    include conf.d/basic.conf;
+}
