@@ -1,0 +1,43 @@
+server {
+    listen 80;
+    listen [::]:80;
+
+    # The www host server name.
+    server_name www.site.dev;
+
+    # Redirect to the non-www version.
+    return 301 $scheme://site.dev$request_uri;
+}
+
+server {
+    listen 80 defered;
+    listen [::]:80 defered;
+
+    # The non-www host server name.
+    server_name site.dev;
+
+    # The document root path.
+    root /var/www/site.dev/public;
+
+    # The charset.
+    charset utf-8;
+
+    # Files that will be used as index.
+    index index.html index.htm;
+
+    location / {
+        # First attempt to serve request as a file, then as a directory, then
+        # fallback to display 404 Not Found.
+        try_files $uri $uri/ =404;
+    }
+
+    # Custom 404 page.
+    error_page 404 /404.html;
+
+    # Log configuration.
+    error_log logs/site.dev_error.log error;
+    access_log logs/site.dev_access.log main;
+
+    # Include basic configuration.
+    include snippets/basic.conf;
+}
