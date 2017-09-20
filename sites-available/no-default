@@ -1,5 +1,10 @@
-# Drop requests for unknown hosts if there is no default server.
+# If client requests for an unknown server name and there's no default server
+# name defined, Nginx will serve the first server configuration found. To
+# prevent this, we'll define a default server name and drop the request.
 server {
-    listen 80 default_server;
+    listen [::]:80 default_server deferred;
+    server_name _;
+
+    # Return 444 (No Response)
     return 444;
 }
