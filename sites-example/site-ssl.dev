@@ -58,8 +58,8 @@ server {
     error_page 404 /404.html;
 
     # Log configuration.
-    error_log logs/site.dev_error.log error;
-    access_log logs/site.dev_access.log main;
+    error_log /etc/nginx/logs/site.dev_error.log error;
+    access_log /etc/nginx/logs/site.dev_access.log main;
 
     # SSL certificate file.
     ssl_certificate ssl/site.dev/fullchain.pem;
