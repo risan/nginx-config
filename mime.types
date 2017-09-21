@@ -98,13 +98,6 @@ types {
     text/vtt                              vtt;
     text/x-component                      htc;
 
-    # Octet-stream mime type.
-    application/octet-stream              bin exe dll;
-    application/octet-stream              deb;
-    application/octet-stream              dmg;
-    application/octet-stream              iso img;
-    application/octet-stream              msi msp msm;
-
     # Microsoft Office.
     application/msword                                                         doc;
     application/vnd.ms-excel                                                   xls;
