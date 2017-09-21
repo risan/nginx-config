@@ -10,8 +10,8 @@ server {
 }
 
 server {
-    listen 80 defered;
-    listen [::]:80 defered;
+    listen 80 deferred;
+    listen [::]:80 deferred;
 
     # The non-www host server name.
     server_name site.dev;
