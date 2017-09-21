@@ -2,8 +2,8 @@
 # name defined, Nginx will serve the first server configuration found. To
 # prevent this, we have to define a default server name and drop the request.
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+    listen 80 default_server deferred;
+    listen [::]:80 default_server deferred;
     server_name _;
 
     # Return 444 (No Response)

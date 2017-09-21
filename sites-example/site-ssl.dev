@@ -10,8 +10,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2 deferred;
-    listen [::]:443 ssl http2 deferred;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
 
     # The www host server name.
     server_name www.site.dev;
