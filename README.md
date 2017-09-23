@@ -7,6 +7,18 @@ Nginx configuration example for maximum performance.
     * [Nginx Basic Commands](#nginx-basic-commands)
 * [Installation](#installation)
 * [Quick Start Guide](#quick-start-guide)
+* [Configuration Directory Structure](#configuration-directory-structure)
+    * [conf.d](#conf.d)
+    * [logs](#logs)
+    * [sites-available](#sites-available)
+    * [sites-enabled](#sites-enabled)
+    * [sites-examples](#sites-examples)
+    * [snippets](#snippets)
+        * [directive](#directive)
+        * [location](#location)
+    * [ssl](#ssl)
+    * [mime.types](#mime.types)
+    * [nginx.conf](#nginx.conf)
 
 ## Requirements
 
@@ -152,3 +164,78 @@ sudo service nginx reload
 ```
 
 Now your website under the `/var/www/awesome.com` directory should be available from the `http://awesome.com` URL.
+
+## Configuration Directory Structure
+
+Here's an overview of this Nginx configuration directory structure:
+
+```
+|-- conf.d          # Your costom configuration
+|-- logs            # Nginx website logs directory
+|-- sites-available # Your available website configurations
+|-- sites-enabled   # Your enabled website configurations
+|-- sites-examples  # Website configuration examples
+|   |-- no-default.conf
+|   |-- site.conf
+|   |-- site-ssl.conf
+|   |-- php.conf
+|   |-- php-ssl.conf
+|   |-- proxy.conf
+|   |-- proxy-ssl.conf
+|-- snippets        # Configuration snippets
+|   |-- directive
+|   |-- location
+|-- ssl             # SSL certificates directory
+|-- mime.types      # MIME types list
+|-- nginx.conf      # Main configurations
+```
+
+### conf.d
+All of your custom Nginx configurations should be defined here. If you check the `nginx.conf` file, you'll see that all of the files with `.conf` extension within this directory will be included.
+
+### logs
+By default, this is where all of the Nginx error & access log files will be stored.
+
+### sites-available
+This is where you'll store your website configuration files. Note that configuration files stored here are not automatically available to Nginx, you still have to create a symbolic link within the `sites-enabled` directory.
+
+### sites-enabled
+This directory holds all of the enabled website configurations. Usually, this directory only contains symbolic links to the actual configuration files in `sites-available` directory.
+
+### sites-examples
+This is where all of the website configuration examples that you can easily copy are stored. Currently, there are 7 configuration examples that you can use:
+
+* `no-default.conf` => To drop request to an unknown server name
+* `site.conf` => Basic website configuration
+* `site-ssl.conf` => Basic website configuration with SSL
+* `php.conf` => PHP based website configuration
+* `php-ssl.conf` => PHP based website configuration with SSL
+* `proxy.conf` => Reverse proxy configuration
+* `proxy-ssl.conf` => Reverse proxy configuration with SSL
+
+### snippets
+This is where all of the reusable Nginx configuration snippets are stored. There are two main directories within it:
+
+#### directive
+Configuration snippets that are only contain directive:
+
+* `ssl.conf` => Snippet for SSL configuration
+* `fastcgi.conf` => Parameters setup for FastCGI server
+* `fastcgi-php.conf` => FastCGI parameters for PHP
+* `proxy.conf` => Configuration for proxied website
+* `websocket-proxy.conf` => Proxy setup for websocket support
+
+#### Location
+Configuration snippets that contain within the `location` scope:
+
+* `cache-control.conf` => `Cahce-Control` header configuration for some static files
+* `protect-sensitive-files.conf` => Protection for sensitive files
+
+### ssl
+This is where DHE chipers parameters and all of the SSL certificates will be stored.
+
+### mime.types
+This is the file where you can map file extensions to MIME types.
+
+### nginx.conf
+This is the main Nginx configuration file.
