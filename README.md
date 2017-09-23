@@ -29,6 +29,7 @@ Nginx configuration example for maximum performance.
     * [`error_page`](#the-error_page-directive)
     * [`error_log`](#the-error_log-directive)
     * [`access_log`](#the-access_log-directive)
+* [Drop Request to an Unknown Server Name](#drop-request-to-an-unknown-server-name)
 
 ## Requirements
 
@@ -357,3 +358,30 @@ access_log /etc/nginx/logs/example.com_access.log main;
 ```
 
 `main` is referring to the access log format defined on `nginx.conf` file.
+
+## Drop Request to an Unknown Server Name
+
+If a client requests for an unknown server name and there's no default server name defined, by default Nginx will serve the first server configuration found. To prevent this, you have to create a configuration for a default server name where you'll drop the request.
+
+First, copy the `no-default.conf` example:
+
+```bash
+sudo cp /etc/nginx/sites-examples/no-default.conf /etc/nginx/sites-available/no-default
+```
+
+Secondly, create a symbolic link to this configuration file within the `sites-enabled` directory:
+
+```bash
+sudo ln -sfv /etc/nginx/sites-available/no-default /etc/nginx/sites-enabled/
+```
+
+Make sure that there's no error on the configuration file:
+
+```bash
+sudo nginx -t
+```
+
+Then finally reload your Nginx configuration:
+```bash
+sudo service nginx reload
+```
