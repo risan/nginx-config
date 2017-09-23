@@ -8,7 +8,7 @@ Nginx configuration example for maximum performance.
 * [Installation](#installation)
 * [Quick Start Guide](#quick-start-guide)
 * [Configuration Directory Structure](#configuration-directory-structure)
-    * [conf.d](#conf.d)
+    * [conf.d](#confd)
     * [logs](#logs)
     * [sites-available](#sites-available)
     * [sites-enabled](#sites-enabled)
@@ -17,8 +17,8 @@ Nginx configuration example for maximum performance.
         * [directive](#directive)
         * [location](#location)
     * [ssl](#ssl)
-    * [mime.types](#mime.types)
-    * [nginx.conf](#nginx.conf)
+    * [mime.types](#mimetypes)
+    * [nginx.conf](#nginxconf)
 
 ## Requirements
 
