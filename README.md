@@ -5,10 +5,12 @@ Nginx configuration example for maximum performance.
 * [Requirements](#requirements)
 * [Nginx Installation](#nginx-installation)
     * [Nginx Basic Commands](#nginx-basic-commands)
+* [Installation](#installation)
 
 ## Requirements
 
 The following packages are required to use this configuration example:
+* [Git](https://git-scm.com) for installation
 * [Nginx](https://nginx.org) version 1.13.0 or newer 
 * [PHP-FPM](https://php-fpm.org) (If you want to setup PHP based website)
 
@@ -51,4 +53,16 @@ sudo nginx -t
 # When you made a change to the Nginx configuration, 
 # you need to reload the Nginx configuration with the following command:
 sudo service nginx reload
+```
+
+## Installation
+To install this optimized Nginx configuration on your machine, you simply need to replace your `nginx` configuration directory with this repository. It's always a good idea to backup your current Nginx configuration:
+
+```bash
+sudo mv /etc/nginx /etc/nginx.bak
+```
+
+Then download this repository using the `git clone` command:
+```bash
+sudo git clone https://github.com/risan/nginx-config.git /etc/nginx
 ```
