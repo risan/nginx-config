@@ -20,6 +20,15 @@ Nginx configuration example for maximum performance.
     * [mime.types](#mimetypes)
     * [nginx.conf](#nginxconf)
 * [Basic Configurations](#basic-configurations)
+    * [`listen`](#the-listen-directive)
+    * [`server_name`](#the-server_name-directive)
+    * [Redirect to non-www server name](#redirect-to-non-www-server-name)
+    * [`root`](#the-root-directive)
+    * [`index`](#the-index-directive)
+    * [`try_files`](#the-try_files-directive)
+    * [`error_page`](#the-error_page-directive)
+    * [`error_log`](#the-error_log-directive)
+    * [`access_log`](#the-access_log-directive)
 
 ## Requirements
 
@@ -283,7 +292,7 @@ server {
 }
 ```
 
-### Redirect to Non-WWW server name
+### Redirect to non-www server name
 As you might have noticed, the first `server` block on all of the website configuration examples are dealing with a redirection from a www version to the non-www version (e.g. from www.example.com to example.com).
 
 ```nginx
