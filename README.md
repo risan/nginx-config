@@ -170,11 +170,11 @@ Now your website under the `/var/www/awesome.com` directory should be available 
 Here's an overview of this Nginx configuration directory structure:
 
 ```
-|-- conf.d          # Your costom configuration
-|-- logs            # Nginx website logs directory
-|-- sites-available # Your available website configurations
-|-- sites-enabled   # Your enabled website configurations
-|-- sites-examples  # Website configuration examples
+|-- conf.d                  # Your costom configuration
+|-- logs                    # Nginx website logs directory
+|-- sites-available         # Your available website configurations
+|-- sites-enabled           # Your enabled website configurations
+|-- sites-examples          # Website configuration examples
 |   |-- no-default.conf
 |   |-- site.conf
 |   |-- site-ssl.conf
@@ -182,12 +182,12 @@ Here's an overview of this Nginx configuration directory structure:
 |   |-- php-ssl.conf
 |   |-- proxy.conf
 |   |-- proxy-ssl.conf
-|-- snippets        # Configuration snippets
+|-- snippets                # Configuration snippets
 |   |-- directive
 |   |-- location
-|-- ssl             # SSL certificates directory
-|-- mime.types      # MIME types list
-|-- nginx.conf      # Main configurations
+|-- ssl                     # SSL certificates directory
+|-- mime.types              # MIME types list
+|-- nginx.conf              # Main configurations
 ```
 
 ### conf.d
@@ -214,10 +214,10 @@ This is where all of the website configuration examples that you can easily copy
 * `proxy-ssl.conf` => Reverse proxy configuration with SSL
 
 ### snippets
-This is where all of the reusable Nginx configuration snippets are stored. There are two main directories within it:
+This is where you'll find all of the reusable Nginx configuration snippets are. You'll see that some of these snippets are being included on the website configuration examples. There are two directories within it:
 
 #### directive
-Configuration snippets that are only contain directive:
+This directory holds all of the snippets that contain only a directive configurations (the directives that are not set within any specific block).
 
 * `ssl.conf` => Snippet for SSL configuration
 * `fastcgi.conf` => Parameters setup for FastCGI server
@@ -225,17 +225,27 @@ Configuration snippets that are only contain directive:
 * `proxy.conf` => Configuration for proxied website
 * `websocket-proxy.conf` => Proxy setup for websocket support
 
-#### Location
-Configuration snippets that contain within the `location` scope:
+#### location
+This is where all of the snippets with configuration directives being set within the `location` block goes.
 
-* `cache-control.conf` => `Cahce-Control` header configuration for some static files
+* `cache-control.conf` => The `Cahce-Control` header configuration for some static files
 * `protect-sensitive-files.conf` => Protection for sensitive files
 
+> Note that the `add_header` directive set on the `location` block will replace the other `add_header` directives that are being set on its parent block or any less specific `location` block.
+
+So if you include the `cache-control.conf` on your website configuration, all of the static files that are configured within the `cache-control.conf` snippets won't inherit any headers you've set on the parent block or any less specific `location` block. To work around this, you have to set your header on a specific `location` block:
+
+```nginx
+location ~* \.json$ {
+    add_header Access-Control-Allow-Origin "*";
+}
+```
+
 ### ssl
-This is where DHE chipers parameters and all of the SSL certificates will be stored.
+This is where DHE chippers parameters and all of the SSL certificates will be stored. Usually, you'll just create symbolic links here that point out to the real certificate path.
 
 ### mime.types
-This is the file where you can map file extensions to MIME types.
+This is the file where you can map file extensions to its MIME types.
 
 ### nginx.conf
 This is the main Nginx configuration file.
