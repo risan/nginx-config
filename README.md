@@ -19,6 +19,7 @@ Nginx configuration example for maximum performance.
     * [ssl](#ssl)
     * [mime.types](#mimetypes)
     * [nginx.conf](#nginxconf)
+* [Basic Configurations](#basic-configurations)
 
 ## Requirements
 
@@ -249,3 +250,101 @@ This is the file where you can map file extensions to its MIME types.
 
 ### nginx.conf
 This is the main Nginx configuration file.
+
+## Basic Configurations
+
+Here are some basic configurations that are commonly found on website configuration examples at `sites-example` directory.
+
+### The `listen` directive
+This is where you set the port number on which Nginx will listen to. The defaults are port `80` for HTTP and `443` for HTTPS:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80; # This is for IPv6
+    ...
+}
+
+# For SSL website with HTTP/2 protocol
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    ...
+}
+```
+
+### The `server_name` directive
+This is where you set names of the virtual server. Note that the first name will become the primary server name.
+
+```nginx
+server {
+    ...
+    server_name example.com www.example.com;
+}
+```
+
+### Redirect to Non-WWW server name
+As you might have noticed, the first `server` block on all of the website configuration examples are dealing with a redirection from a www version to the non-www version (e.g. from www.example.com to example.com).
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name www.example.com;
+
+    # Redirect to the non-www version.
+    return 301 $scheme://example.com$request_uri;
+}
+```
+
+* `301` is the HTTP status code that is set for the response, which means "moved permanently".
+* `$request_uri` is the Nginx embedded variable that holds a full original request URI
+
+### The `root` directive
+This is where you set the root directory for requests.
+
+```nginx
+root /var/www/example.com/public;
+```
+
+### The `index` directive
+You can use this directive to define the files that will be used as an index. Note that the files will be checked in the specified order.
+
+```nginx
+index index.html index.htm;
+```
+
+### The `try_files` directive
+This is the list of files that will be used to serve a request. It will be checked in the given order.
+
+```nginx
+location / {
+    try_files $uri $uri/ =404;
+}
+```
+
+From the above snippet, first Nginx will check if the given `$uri` match any file. If there's no match, it will try to serve it as a directory. Or else it will fallback to display the 404 page.
+
+### The `error_page` directive
+This directive can be used to set a URI for a custom error pages.
+
+```nginx
+# Custom 404 page.
+error_page 404 /404.html;
+```
+
+### The `error_log` directive
+This directive allows you to set the path to the log file. You can also set the log level to any of the following options: `debug`, `info`, `notice`, `warn`, `error`, `crit`, `alert`, or `emerg`.
+
+```nginx
+error_log /etc/nginx/logs/example.com_error.log error;
+```
+
+### The `access_log` directive
+This is where you set the path to the request log file. For performance reason, you can also set this directive `off` to disable the request log.
+
+```nginx
+access_log /etc/nginx/logs/example.com_access.log main;
+```
+
+`main` is referring to the access log format defined on `nginx.conf` file.
