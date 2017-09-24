@@ -33,7 +33,7 @@ Nginx configuration example for maximum performance.
 * [Setup New Website](#setup-new-website)
 * [Setup PHP Website](#setup-php-website)
 * [Setup Reverse Proxy](#setup-reverse-proxy)
-* [Free SSL Certificate with Let's Encrypt][#free-ssl-certificate-with-lets-encrypt]
+* [Free SSL Certificate with Let's Encrypt](#free-ssl-certificate-with-lets-encrypt)
     * [Certbot Installation](#certbot-installation)
     * [Get SSL Certificate](#get-ssl-certificate)
 
