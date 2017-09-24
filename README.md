@@ -37,6 +37,18 @@ Nginx configuration example for maximum performance.
     * [Certbot Installation](#certbot-installation)
     * [Get SSL Certificate](#get-ssl-certificate)
 * [Setup SSL Website](#setup-ssl-website)
+* [Advanced Configurations](#advanced-configurations)
+    * [`user`](#the-user-directive)
+    * [`worker_processes`](#the-worker_processes-directive)
+    * [`worker_rlimit_nofile`](#the-worker_rlimit_nofile-directive)
+    * [`worker_connections`](#the-worker_connections-directive)
+    * [`server_names_hash_max_size` and `server_names_hash_bucket_size`](#the-server_names_hash_max_size-and-server_names_hash_bucket_size-directives)
+    * `types_hash_max_size` and `types_hash_bucket_size`](#the-types_hash_max_size-and-types_hash_bucket_size-directives)
+    * [`sendfile`](#the-sendfile-directive)
+    * [`tcp_nopush`](#the-tcp_nopush-directive)
+    * [`tcp_nodelay`](#the-tcp_nodelay-directive)
+    * [`keepalive_timeout`](#the-keepalive_timeout-directive)
+    * [Gzip related directives](#gzip-related-directives)
 
 ## Requirements
 
@@ -770,5 +782,116 @@ Then tells Nginx to reload your new configuration:
 ```bash
 sudo service nginx reload
 ```
+
+## Advanced Configurations
+
+### The `user` directive
+This is where you define the `user` and the `group` for the Nginx worker processes. For security purposes, make sure that this is set to the user and group with limited privileges.
+
+```nginx
+user www-data www-data;
+```
+
+### The `worker_processes` directive
+This directive is used to set the number of worker processes. The optimum value depends on the number of CPU cores, the number of hard drives, and many other factors. Setting it to the number of CPU cores is good starting point, but if you're unsure you can just leave it set to `auto`.
+
+```nginx
+worker_processes auto;
+```
+
+Here's the basic formula for calculating the maximum number of connections:
+
+```
+Max. number of connections = worker_processes * worker_connections
+```
+
+### The `worker_rlimit_nofile` directive
+Use this directive to set the maximum number of open files (the `RLIMIT_NOFILE`) for worker processes. Set this directive more than the `worker_connections`.
+
+```nginx
+worker_rlimit_nofile 8192;
+```
+
+### The `worker_connections` directive
+This directive sets the maximum number of simultaneous connections that can be opened by the worker processes. Note that this is not only connections with clients but also any other internal connections (e.g. connections with the proxy server).
+
+```nginx
+events {
+    worker_connections 8000;
+}
+```
+
+### The `server_names_hash_max_size` and `server_names_hash_bucket_size` directives
+If you defined a large set of server names, you'll probably need to increase either the `server_names_hash_max_size` or the `server_names_hash_bucket_size` values. It's recommended that you increase the `server_names_hash_max_size` value first, usually close to the number of server names.
+
+```nginx
+server_names_hash_max_size 1024;
+server_names_hash_bucket_size 32;
+```
+
+By default, the`server_names_hash_bucket_size` is equal to the processor's cache line size. If you want to update it, the value must be a multiple of it  (e.g. 32/64/128).
+
+### The `types_hash_max_size` and `types_hash_bucket_size` directives
+This is where you define the maximum hash size (`types_hash_max_size`) and it's hash bucket size (`types_hash_bucket_size`) for storing MIME types data in hash table.
+
+```nginx
+types_hash_max_size 2048;
+types_hash_bucket_size 32;
+```
+
+### The `sendfile` directive
+This directive is used to enable/disable the use of `sendfile()`. If it's set to `on`, it can speed up static file transfers by using the `sendfile()` rather than the `read()` and `write()` combination. This is because `sendfile()` has the ability to transfer data directly from the file descriptor.
+
+```nginx
+sendfile on;
+```
+
+For FreeBSD user, you also have to set the `aio` directive in order to use this feature.
+
+```nginx
+sendfile on;
+aio on;
+```
+
+### The `tcp_nopush` directive
+This directive is used to enable/disable the `TCP_CORK` socket option (the `TCP_NOPUSH` option on FreeBSD). Setting it to `on` can optimize the amount of data that is being sent at once. This will prevent Nginx from sending a partial frame. As a result, it will increase the throughput since TCP frames will be filled up before being sent out.
+
+```nginx
+tcp_nopush on;
+```
+
+Note that you'll also need to activate the `sendfile` directive in order to enable this option.
+
+### The `tcp_nodelay` directive
+You can set this directive to enable/disable the `TCP_NODELAY` option. By default, the TCP stack implements a mechanism to delay sending the data up to 200ms. This is to make sure that it won't send a packet that would be too small.
+
+However, nowadays chances are so small that our files won't fill up the buffer immediately. Thus we can turn `on` this option to force the socket to send the data in its buffer immediately.
+
+```nginx
+tcp_nodelay on;
+```
+
+### The `keepalive_timeout` timeout
+This directive is used to set a timeout of which a keep-alive connection will stay open. The longer the duration is, the better for the client, especially on SSL connection. The downside is the worker connection is occupied much longer.
+
+```nginx
+keepalive_timeout 20s;
+```
+
+### Gzip related directives
+To enable Gzip compression, you can set the `gzip` directive to `on`:
+
+```nginx
+gzip on;
+```
+
+There are also several other directives you can set related to gzip:
+
+* `gzip_comp_level` => The gzip compression level (1-9). 5 is a perfect compromise between size and CPU usage, offering about 75% reduction for most ASCII files (almost identical to level 9).
+* `gzip_min_length` => The minimum length of a response that will be gzipped. Don't compress a small file that is unlikely to shrink much. The small file is also usually ended up in larger file sizes after gzipping.
+* `gzip_proxied` => Enables or disables gzipping of responses for proxied connection.
+* `gzip_vary` => Enables or disables inserting the “Vary: Accept-Encoding” header in response.
+
+
 
 
