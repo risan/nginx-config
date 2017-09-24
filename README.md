@@ -1,4 +1,5 @@
 # Optimized Nginx Configuration
+
 Nginx configuration example for maximum performance.
 
 ## Table of Contents
@@ -42,13 +43,14 @@ Nginx configuration example for maximum performance.
     * [`worker_processes`](#the-worker_processes-directive)
     * [`worker_rlimit_nofile`](#the-worker_rlimit_nofile-directive)
     * [`worker_connections`](#the-worker_connections-directive)
-    * [`server_names_hash_max_size` and `server_names_hash_bucket_size`](#the-server_names_hash_max_size-and-server_names_hash_bucket_size-directives)
-    * `types_hash_max_size` and `types_hash_bucket_size`](#the-types_hash_max_size-and-types_hash_bucket_size-directives)
+    * [`server_names_hash_max_size`](#the-server_names_hash_max_size-and-server_names_hash_bucket_size-directives) and [`server_names_hash_bucket_size`](#the-server_names_hash_max_size-and-server_names_hash_bucket_size-directives)
+    * [`types_hash_max_size`](#the-types_hash_max_size-and-types_hash_bucket_size-directives) and [`types_hash_bucket_size`](#the-types_hash_max_size-and-types_hash_bucket_size-directives)
     * [`sendfile`](#the-sendfile-directive)
     * [`tcp_nopush`](#the-tcp_nopush-directive)
     * [`tcp_nodelay`](#the-tcp_nodelay-directive)
     * [`keepalive_timeout`](#the-keepalive_timeout-directive)
     * [Gzip related directives](#gzip-related-directives)
+* [Credits](#credits)
 
 ## Requirements
 
@@ -871,7 +873,7 @@ However, nowadays chances are so small that our files won't fill up the buffer i
 tcp_nodelay on;
 ```
 
-### The `keepalive_timeout` timeout
+### The `keepalive_timeout` directive
 This directive is used to set a timeout of which a keep-alive connection will stay open. The longer the duration is, the better for the client, especially on SSL connection. The downside is the worker connection is occupied much longer.
 
 ```nginx
@@ -892,6 +894,13 @@ There are also several other directives you can set related to gzip:
 * `gzip_proxied` => Enables or disables gzipping of responses for proxied connection.
 * `gzip_vary` => Enables or disables inserting the “Vary: Accept-Encoding” header in response.
 
+## Credits
+
+All of these configurations setup are gathered from the following resources:
+
+* [Nginx Documentation](http://nginx.org/en/docs/)
+* [Nginx Configs Boilerplate](https://github.com/h5bp/server-configs-nginx) by [h5bp](https://h5bp.github.io)
+* [Nginx Optimization](https://t37.net/nginx-optimization-understanding-sendfile-tcp_nodelay-and-tcp_nopush.html) by [Fred de Villamil](https://t37.net)
 
 
 
