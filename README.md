@@ -31,7 +31,8 @@ Nginx configuration example for maximum performance.
     * [`access_log`](#the-access_log-directive)
 * [Drop Request to an Unknown Server Name](#drop-request-to-an-unknown-server-name)
 * [Setup New Website](#setup-new-website)
-* [Setup New PHP Website](#setup-new-php-website)
+* [Setup PHP Website](#setup-php-website)
+* [Setup Reverse Proxy](#setup-reverse-proxy)
 
 ## Requirements
 
@@ -459,7 +460,7 @@ sudo service nginx reload
 
 That's it, your website should now be served under the `awesome.com` domain.
 
-## Setup New PHP Website
+## Setup PHP Website
 
 To set up a new PHP based website, the steps are quite similar to [Setup New Website](#setup-new-website) section. But instead of `site.conf`, you'll be using the `php.conf` example file as a base.
 
@@ -549,6 +550,108 @@ sudo nginx -t
 ```
 
 Finally, reload your Nginx configuration:
+
+```bash
+sudo service nginx reload
+```
+
+## Setup Reverse Proxy
+
+You can use the `proxy.conf` example file as a base to create a reverse proxy site configuration. For example, if you have a Node.JS application running locally on port `3000`, you can expose it to the internet through a reverse proxy.
+
+Suppose you've set up a domain named `awesome.com` to use. First, you need to copy the `proxy.conf` file to the `sites-available` directory:
+
+```bash
+sudo cp /etc/nginx/sites-example/proxy.conf /etc/nginx/sites-available/awesome.com
+```
+
+Open the copied file with your favorite editor:
+
+```bash
+# Open it up in VIM
+sudo vim /etc/nginx/sites-available/awesome.com
+```
+
+Then replace all of the references to `example.com` with your `awesome.com` domain:
+
+```nginx
+# For brevity only show the lines that need to be changed.
+
+# Group of servers that will be proxied to.
+upstream backend {
+    server localhost:3000;
+}
+
+server {
+    ...
+
+    # The www host server name.
+    server_name www.awesome.com;
+
+    # Redirect to the non-www version.
+    return 301 $scheme://awesome.com$request_uri;
+}
+
+server {
+    ...
+
+    # The non-www host server name.
+    server_name awesome.com;
+
+    # The document root path.
+    root /var/www/awesome.com/public;
+
+    ...
+
+    # Log configuration.
+    error_log /etc/nginx/logs/awesome.com_error.log error;
+    access_log /etc/nginx/logs/awesome.com_access.log main;
+
+    ...
+}
+```
+
+Make sure that you also set the correct target server on the first `upstream` block. Note that you can also define multiple servers on which the request will be proxied to:
+
+```nginx
+upstream backend {
+    server localhost:3000;
+}
+```
+
+The `backend` is just a name of the group of servers, so you easily refer to it within other blocks, it can be anything.
+
+Since the Nginx is really good at serving static files, the example configuration will let all of the static files under the given `root` directive being served solely by Nginx—not being proxied to the app.
+
+```nginx
+server {
+    ...
+
+    root /var/www/example.com/public;
+
+    location / {
+        # First attempt to serve request as a file, then proxy it to the
+        # backend group.
+        try_files $uri @backend;
+    }
+
+    ...
+}
+```
+
+The next step would be to create a symbolic link within the `sites-enabled` that refers to this config file:
+
+```bash
+sudo ln -sfv /etc/nginx/sites-available/awesome.com /etc/nginx/sites-enabled/
+```
+
+Test your new configuration file and make sure that there are no errors:
+
+```bash
+sudo nginx -t
+```
+
+Lastly, reload your Nginx configuration with the following command:
 
 ```bash
 sudo service nginx reload
