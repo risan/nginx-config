@@ -33,6 +33,9 @@ Nginx configuration example for maximum performance.
 * [Setup New Website](#setup-new-website)
 * [Setup PHP Website](#setup-php-website)
 * [Setup Reverse Proxy](#setup-reverse-proxy)
+* [Free SSL Certificate with Let's Encrypt][#free-ssl-certificate-with-lets-encrypt]
+    * [Certbot Installation](#certbot-installation)
+    * [Get SSL Certificate](#get-ssl-certificate)
 
 ## Requirements
 
@@ -656,3 +659,68 @@ Lastly, reload your Nginx configuration with the following command:
 ```bash
 sudo service nginx reload
 ```
+
+## Free SSL Certificate with Let's Encrypt
+
+In order to set up an SSL website, you're going to need a valid SSL certificate. The good news is that you can get it for free from [Let's Encrypt](https://letsencrypt.org).
+
+### Certbot Installation
+
+On this section, you'll be guided to retrieve a free SSL certificate from Let's Encrypt using the [Certbot](https://certbot.eff.org). First, you need to add the `certbot/certbot` PPA to your repository list:
+
+```bash
+sudo add-apt-repository ppa:certbot/certbot
+```
+
+Next, update your packages index and install the `python-certbot-nginx`:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python-certbot-nginx 
+```
+
+### Get SSL Certificate
+
+Suppose you want to generate an SSL certificate for your `awesome.com` and `www.awesome.com` domains. The first thing you need to do is to set up the non-SSL version of your website. You can refer to the [Setup New Website](#setup-new-website) section for this. 
+
+Note that within your website configuration you need to include the `snippets/basic.conf` or `snippets/location/protect-sensitive-files.conf` snippets. This snippet will allow client to access the `.well-known` directory thus allowing the `certbot` client verifying our domain.
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name awesome.com;
+    ...
+
+    # Include basic configuration.
+    include snippets/basic.conf;
+}
+```
+
+Next, on your terminal run the following command:
+
+```bash
+sudo certbot --nginx certonly
+```
+
+Just follow the instruction, the `certbot` will guide you. Or if you want to automate it and be done with just one single command, you can do this:
+
+```bash
+sudo certbot certonly --webroot -w /var/www/awesome.com/public -d awesome.com -d www.awesome.com -n -m johndoe@awesome.com --agree-tos
+```
+
+* `--webroot` => Use the webroot plugin
+* `-w` => The root directory of your website
+* `-d` => The domain name of your website
+* `-n` => Use the non-interactive mode
+* `-m` => Email address for notification
+* `--agree-tos` => Agree to TOS
+
+The `certbot` will generate the SSL certificate under the `/etc/letsencrypt/live/awesome.com`. There will be four types of files available to you:
+
+* `fullchain.pem` => Contain all of the certificates (server certificate and follow by any other intermediates)
+* `privkey.pem` => The private key for your certificate
+* `cert.pem` => The server certificate
+* `chain.pem` => Holds additional intermediate certificates
+
+And that's it, you've just got yourself your own SSL certificate ready to use for your website.
