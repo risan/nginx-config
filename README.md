@@ -12,7 +12,7 @@ Nginx configuration example for maximum performance.
     * [logs](#logs)
     * [sites-available](#sites-available)
     * [sites-enabled](#sites-enabled)
-    * [sites-examples](#sites-examples)
+    * [sites-example](#sites-example)
     * [snippets](#snippets)
         * [directive](#directive)
         * [location](#location)
@@ -30,6 +30,7 @@ Nginx configuration example for maximum performance.
     * [`error_log`](#the-error_log-directive)
     * [`access_log`](#the-access_log-directive)
 * [Drop Request to an Unknown Server Name](#drop-request-to-an-unknown-server-name)
+* [Setup New Website](#setup-new-website)
 
 ## Requirements
 
@@ -109,10 +110,10 @@ Next, you have to download this repository to replace your Nginx configuration:
 sudo git clone https://github.com/risan/nginx-config.git /etc/nginx
 ```
 
-Now, suppose you have a website project stored within the `/var/www/awesome.com` directory and you want it to be served from `awesome.com` domain. First, you have to copy the `/etc/sites-examples/site.conf` to `sites-available` directory:
+Now, suppose you have a website project stored within the `/var/www/awesome.com` directory and you want it to be served from `awesome.com` domain. First, you have to copy the `/etc/sites-example/site.conf` to `sites-available` directory:
 
 ```bash
-sudo cp /etc/sites-examples/site.conf /etc/sites-available/awesome.com
+sudo cp /etc/sites-example/site.conf /etc/sites-available/awesome.com
 ```
 
 Secondly, you need to edit the copied configuration file to match your project detail. Open it up in using your favorite text editor:
@@ -185,7 +186,7 @@ Here's an overview of this Nginx configuration directory structure:
 |-- logs                    # Nginx website logs directory
 |-- sites-available         # Your available website configurations
 |-- sites-enabled           # Your enabled website configurations
-|-- sites-examples          # Website configuration examples
+|-- sites-example           # Website configuration examples
 |   |-- no-default.conf
 |   |-- site.conf
 |   |-- site-ssl.conf
@@ -213,7 +214,7 @@ This is where you'll store your website configuration files. Note that configura
 ### sites-enabled
 This directory holds all of the enabled website configurations. Usually, this directory only contains symbolic links to the actual configuration files in `sites-available` directory.
 
-### sites-examples
+### sites-example
 This is where all of the website configuration examples that you can easily copy are stored. Currently, there are 7 configuration examples that you can use:
 
 * `no-default.conf` => To drop request to an unknown server name
@@ -366,7 +367,7 @@ If a client requests for an unknown server name and there's no default server na
 First, copy the `no-default.conf` example:
 
 ```bash
-sudo cp /etc/nginx/sites-examples/no-default.conf /etc/nginx/sites-available/no-default
+sudo cp /etc/nginx/sites-example/no-default.conf /etc/nginx/sites-available/no-default
 ```
 
 Secondly, create a symbolic link to this configuration file within the `sites-enabled` directory:
@@ -385,3 +386,74 @@ Then finally reload your Nginx configuration:
 ```bash
 sudo service nginx reload
 ```
+
+## Setup New Website
+
+This section will guide you to set up new static files based website (HTML/CSS/JS) using the available `site.conf` example. Suppose you've put your website project on `/var/www/awesome.com` directory and will serve all of the static files from `/var/www/awesome.com/public` directory.
+
+You've also got the `awesome.com` domain name setup where this website will be served. First, you need to copy the `site.conf` configuration example to `sites-available`:
+
+```bash
+sudo cp /etc/nginx/sites-example/site.conf /etc/nginx/sites-available/awesome.com
+```
+
+Then open up the copied file with your favorite editor:
+
+```bash
+# Open it up in VIM
+sudo vim /etc/nginx/sites-available/awesome.com
+```
+
+Replace all of the references to `example.com` with your `awesome.com` domain:
+
+```nginx
+# For brevity only show the lines that need to be changed.
+
+server {
+    ...
+
+    # The www host server name.
+    server_name www.awesome.com;
+
+    # Redirect to the non-www version.
+    return 301 $scheme://awesome.com$request_uri;
+}
+
+server {
+    ...
+
+    # The non-www host server name.
+    server_name awesome.com;
+
+    # The document root path.
+    root /var/www/awesome.com
+
+    ...
+
+    # Log configuration.
+    error_log /etc/nginx/logs/awesome.com_error.log error;
+    access_log /etc/nginx/logs/awesome.com_access.log main;
+
+    ...
+}
+```
+
+Next, you need to create a symbolic link within the `sites-enabled` directory that points out to this configuration file:
+
+```bash
+sudo ln -sfv /etc/sites-available/awesome.com /etc/sites-enabled/
+```
+
+Make sure that there are no errors on the new configuration file:
+
+```bash
+sudo nginx -t
+```
+
+Lastly reload your Nginx configuration with the following command:
+
+```bash
+sudo service nginx reload
+```
+
+That's it, your website should now be served under the `awesome.com` domain.
