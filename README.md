@@ -36,6 +36,7 @@ Nginx configuration example for maximum performance.
 * [Free SSL Certificate with Let's Encrypt](#free-ssl-certificate-with-lets-encrypt)
     * [Certbot Installation](#certbot-installation)
     * [Get SSL Certificate](#get-ssl-certificate)
+* [Setup SSL Website](#setup-ssl-website)
 
 ## Requirements
 
@@ -259,7 +260,7 @@ location ~* \.json$ {
 ```
 
 ### ssl
-This is where DHE chippers parameters and all of the SSL certificates will be stored. Usually, you'll just create symbolic links here that point out to the real certificate path.
+This is where DHE ciphers parameters and all of the SSL certificates will be stored. Usually, you'll just create symbolic links here that point out to the real certificate path.
 
 ### mime.types
 This is the file where you can map file extensions to its MIME types.
@@ -724,3 +725,50 @@ The `certbot` will generate the SSL certificate under the `/etc/letsencrypt/live
 * `chain.pem` => Holds additional intermediate certificates
 
 And that's it, you've just got yourself your own SSL certificate ready to use for your website.
+
+## Setup SSL Website
+
+Before setting up a new SSL website, you need to generate strong DH parameters for the DHE ciphers and store it within the `ssl` directory:
+
+```bash
+sudo openssl dhparam -out /etc/nginx/ssl/dhparam.pem 4096
+```
+
+Within the `sites-example` directory there is an SSL version for each of the website configuration type:
+
+- `site-ssl.conf` => For static files based website (HTML/JS/CSS)
+- `php-ssl.conf` => For PHP based website
+- `proxy-ssl.conf` => For reverse proxy site
+
+To set up the SSL version, the steps are quite similar to the non-SSL version explained in the previous sections. You just need to copy the configuration example from the SSL version and set the correct path for the SSL certificate.
+
+```nginx
+# SSL certificate file.
+ssl_certificate ssl/awesome.com/fullchain.pem;
+
+# SSL certificate secret key file.
+ssl_certificate_key ssl/awesome.com/privkey.pem;
+
+# SSL trusted CA certificate file for OCSP stapling.
+ssl_trusted_certificate ssl/awesome.com/chain.pem;
+```
+
+You can just drop your SSL certificate files under the `/etc/nginx/ssl/awesome.com` directory or create a symlink that points to the real path. Or if you happen to use the Let's Encrypt certificate from the previous section, you create it like so:
+
+```bash
+sudo ln -sfv /etc/letsencrypt/live/awesome.com /etc/nginx/ssl/
+```
+
+Once everything is set up, don't forget to test your configuration file first:
+
+```bash
+sudo nginx -t
+```
+
+Then tells Nginx to reload your new configuration:
+
+```bash
+sudo service nginx reload
+```
+
+
