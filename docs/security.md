@@ -222,9 +222,12 @@ internal hostnames or certificate paths.
 
 ## Container checks
 
-The generator image serves the browser UI; it does not deploy or execute the
-configuration the UI exports. Run exported NGINX files in a separately reviewed
-NGINX service.
+The NGINX image is the user site/service runtime. It serves content from the
+read-only `/usr/share/nginx/html` mount and loads the complete read-only
+`/etc/nginx/nginx.conf` mount; it contains no Node or Vue application assets.
+The separate `web/` client can be hosted through Workers and only downloads
+configuration text. Validate generated files against the actual runtime and
+workload before mounting them.
 
 For a production container, review these controls:
 

@@ -1,4 +1,4 @@
-# Reverse proxy, workload, container, and generator research
+# Reverse proxy, workload, runtime image, and generator research
 
 Research checked on **2026-09-20**. Sources are upstream NGINX, Docker, and
 GitHub documentation. This note separates documented behavior from choices
@@ -26,10 +26,12 @@ timeout, cache size, or connection count.
   `sha256:a5f2157a0302eb0c5e300415effb63a9e70ed1eb9c107283819bf6d149ab607c`
   when checked via the [Docker Hub tag API](https://hub.docker.com/v2/repositories/library/nginx/tags/1.30.5-alpine).
   The Docker Official Image already ships UID 101; the Dockerfile uses
-  `USER 101:101`, port 8080, and `/tmp` paths after copying the generated UI
-  config. This is a deliberate image choice, not the separate nginxinc
-  unprivileged image, so their runtime paths and entrypoint rules must not be
-  mixed.
+  `USER 101:101`, port 8080, and `/tmp` paths for the user site/service
+  runtime. The image contains a generated default config and small welcome site,
+  with complete config and content replaced by read-only mounts at runtime. It
+  contains no Node, Vue, or `dist/` assets. This is a deliberate image choice,
+  not the separate nginxinc unprivileged image, so their runtime paths and
+  entrypoint rules must not be mixed.
 
 ## Reverse proxy rules
 
@@ -165,8 +167,9 @@ timeout, cache size, or connection count.
 - Generate deterministic output and comments. No timestamp in the config.
   Download with an in-browser `Blob`; no backend, account, analytics, or secret
   is needed. The generated text is never executed by the web app.
-- Compile the UI in a Node build stage, then copy only `dist/` into the NGINX
-  runtime. The runtime image should contain no Node toolchain or source tree.
+- Keep the client-only Vue + Vite build separate from the NGINX runtime. Publish
+  `web/` through the operator's Workers deployment; the runtime image does not
+  package the UI or execute downloaded configuration text.
 
 ## Runtime image
 
@@ -184,9 +187,10 @@ timeout, cache size, or connection count.
   These settings are native Compose controls: [Compose service reference](https://docs.docker.com/reference/compose-file/services/).
   If public proxy caching is enabled, use a separately bounded writable volume
   or tmpfs and document that tmpfs counts toward the container memory limit.
-- Bind only the published port, mount custom config read-only, log to stdout and
-  stderr, and run as the image's numeric non-root user. Do not install shells or
-  debugging tools solely for the health check.
+- Bind only the published port, mount the complete config at
+  `/etc/nginx/nginx.conf` and user content at `/usr/share/nginx/html` read-only,
+  log to stdout and stderr, and run as the image's numeric non-root user. Do
+  not install shells or debugging tools solely for the health check.
 
 ## GHCR publishing
 
@@ -241,9 +245,10 @@ timeout, cache size, or connection count.
 9. PHP tests prove only an existing `.php` file reaches PHP-FPM. Go tests prove
    host, scheme, and normalized client address. HTTPS-upstream tests fail an
    untrusted certificate.
-10. The built container runs as non-root, starts with a read-only root and only
+10. The built runtime runs as UID 101, starts with a read-only root and only
     `/tmp` writable, has no Linux capabilities, becomes healthy through HTTP,
-    and serves the Vite app on 8080.
+    serves its default or mounted site on 8080 for `Host: localhost`, and
+    rejects unknown hosts without serving application content.
 11. Pull-request CI builds without registry credentials. A trusted branch/tag
     dry run produces the expected OCI labels and tags; the publish job uses only
     `GITHUB_TOKEN`, pushes GHCR successfully when triggered, and emits an
