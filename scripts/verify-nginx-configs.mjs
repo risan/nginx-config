@@ -36,7 +36,7 @@ try {
     // Syntax checks run without a service DNS network. Loopback is a valid
     // endpoint for parsing; the proxy smoke test below supplies a real backend
     // and exercises DNS, forwarding headers, and runtime behavior.
-    const upstream = profile === 'php' ? '127.0.0.1:9000' : '127.0.0.1:8080';
+    const upstream = profile === 'php' ? '127.0.0.1:9000' : '127.0.0.1:8081';
     const options = {
       ...DEFAULT_OPTIONS,
       profile,
