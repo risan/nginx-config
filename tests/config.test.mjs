@@ -22,7 +22,7 @@ test('exports a stable schema and safe defaults', () => {
     listenPort: 8080,
     httpsPort: 8443,
     documentRoot: '/usr/share/nginx/html',
-    upstream: '127.0.0.1:8080',
+    upstream: '127.0.0.1:8081',
     tls: false,
     certificatePath: '/etc/nginx/tls/fullchain.pem',
     certificateKeyPath: '/etc/nginx/tls/privkey.pem',
@@ -36,6 +36,15 @@ test('exports a stable schema and safe defaults', () => {
   });
   assert.deepEqual(PRESETS.map(({ id }) => id), ['static', 'spa', 'php', 'go', 'proxy']);
   assert.ok(PRESETS.every((preset) => preset.description && preset.defaults));
+});
+
+test('keeps every default profile loopback upstream off the HTTP listener port', () => {
+  for (const preset of PRESETS) {
+    const result = validateOptions({ ...DEFAULT_OPTIONS, ...preset.defaults });
+    assert.equal(result.valid, true, preset.id);
+    const upstreamPort = Number(result.options.upstream.match(/:(\d+)$/)?.[1]);
+    assert.notEqual(upstreamPort, result.options.listenPort, preset.id);
+  }
 });
 
 test('generates the standalone unknown-host guard used by legacy examples', () => {
@@ -95,6 +104,45 @@ test('requires strict JSON booleans and numeric ports', () => {
   assert.equal(validateOptions({ upstream: '[1:2:3:4:5:6:7:8:9]:8080' }).valid, false);
   assert.equal(validateOptions({ documentRoot: null }).valid, false);
   assert.equal(validateOptions({ certificatePath: { length: 2 } }).valid, false);
+});
+
+test('rejects loopback upstream collisions with HTTP or enabled HTTPS listeners', () => {
+  for (const profile of ['php', 'go', 'proxy']) {
+    for (const host of [
+      '127.0.0.1', '127.0.0.9', '127.1', '127.0.1',
+      '2130706433', '0x7f000001', '017700000001',
+      'localhost', '[::1]', '[0:0:0:0:0:0:0:1]', '[::ffff:127.0.0.1]'
+    ]) {
+      const result = validateOptions({ profile, listenPort: 8080, upstream: `${host}:8080` });
+      assert.equal(result.valid, false, `${profile} ${host}:8080`);
+      assert.match(result.errors.upstream, /loopback upstream/);
+    }
+    const tlsResult = validateOptions({ profile, listenPort: 8080, httpsPort: 8443, tls: true, upstream: 'localhost:8443' });
+    assert.equal(tlsResult.valid, false, `${profile} HTTPS listener collision`);
+  }
+
+  assert.equal(validateOptions({ profile: 'static', listenPort: 8080, upstream: '127.0.0.1:8080' }).valid, true);
+  assert.equal(validateOptions({ profile: 'go', listenPort: 8080, upstream: 'backend:8080' }).valid, true);
+  assert.equal(validateOptions({ profile: 'go', listenPort: 8080, upstream: '10.0.0.10:8080' }).valid, true);
+  assert.equal(validateOptions({ profile: 'go', listenPort: 8080, upstream: '[2001:db8::1]:8080' }).valid, true);
+  assert.equal(validateOptions({ profile: 'go', listenPort: 8080, httpsPort: 8443, upstream: 'localhost:8443' }).valid, true);
+});
+
+test('rejects unspecified upstream addresses and their numeric or mapped aliases', () => {
+  for (const profile of ['php', 'go', 'proxy']) {
+    for (const host of [
+      '0.0.0.0', '0', '0.0', '0.0.0', '0x0', '00',
+      '[::]', '[0:0:0:0:0:0:0:0]', '[::0.0.0.0]', '[::ffff:0.0.0.0]', '[::ffff:0:0]'
+    ]) {
+      const result = validateOptions({ profile, listenPort: 8080, upstream: `${host}:8081` });
+      assert.equal(result.valid, false, `${profile} ${host}:8081`);
+      assert.match(result.errors.upstream, /unspecified upstream address/);
+    }
+  }
+
+  assert.equal(validateOptions({ profile: 'static', upstream: '0.0.0.0:8080' }).valid, false);
+  assert.equal(validateOptions({ profile: 'go', upstream: 'backend:8080' }).valid, true);
+  assert.equal(validateOptions({ profile: 'go', upstream: '[2001:db8::1]:8080' }).valid, true);
 });
 
 test('enforces relationships between profile and optional features', () => {

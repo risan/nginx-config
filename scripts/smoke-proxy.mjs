@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_OPTIONS, generateConfig } from '../lib/config.js';
+import { DEFAULT_OPTIONS, generateConfig, PRESETS } from '../lib/config.js';
 
 const image = process.argv[2]
   ?? process.env.NGINX_IMAGE
@@ -26,7 +26,7 @@ function run(command, args, options = {}) {
 }
 
 function cleanup() {
-  spawnSync('docker', ['rm', '-f', edgeName, backendName], { stdio: 'ignore' });
+  spawnSync('docker', ['rm', '-f', backendName, edgeName], { stdio: 'ignore' });
   spawnSync('docker', ['network', 'rm', network], { stdio: 'ignore' });
   rmSync(workdir, { recursive: true, force: true });
 }
@@ -46,19 +46,18 @@ http {
         listen 8081;
         default_type text/plain;
         location / {
-            return 200 "host=$http_host\\nxff=$http_x_forwarded_for\\nreal=$http_x_real_ip\\nproto=$http_x_forwarded_proto\\nforwarded=$http_forwarded\\n";
+            return 200 "response=go-default-upstream\\nhost=$http_host\\nxff=$http_x_forwarded_for\\nreal=$http_x_real_ip\\nproto=$http_x_forwarded_proto\\nforwarded=$http_forwarded\\n";
         }
     }
 }
 `, 'utf8');
 
   const edgeConfig = join(workdir, 'edge.conf');
+  const goDefaults = PRESETS.find((preset) => preset.id === 'go')?.defaults;
   writeFileSync(edgeConfig, generateConfig({
     ...DEFAULT_OPTIONS,
-    profile: 'proxy',
-    serverName: 'localhost',
-    listenPort: 8080,
-    upstream: 'backend:8081',
+    ...goDefaults,
+    serverName: 'example.com',
     tls: false,
     websocket: false,
     streaming: false,
@@ -67,20 +66,22 @@ http {
 
   run('docker', ['network', 'create', network]);
   run('docker', [
-    'run', '-d', '--name', backendName,
-    '--network', network, '--network-alias', 'backend',
-    '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=1777',
-    '--user', '101:101',
-    '--mount', `type=bind,src=${backendConfig},dst=/etc/nginx/nginx.conf,readonly`,
-    '--entrypoint', 'nginx', image, '-g', 'daemon off;'
-  ]);
-  run('docker', [
     'run', '-d', '--name', edgeName,
     '--network', network,
     '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=1777',
     '--user', '101:101',
     '-p', '127.0.0.1::8080',
     '--mount', `type=bind,src=${edgeConfig},dst=/etc/nginx/nginx.conf,readonly`,
+    '--entrypoint', 'nginx', image, '-g', 'daemon off;'
+  ]);
+  // Keep both NGINX processes in one network namespace so the smoke catches
+  // a backend binding to the edge listener's port instead of its own port.
+  run('docker', [
+    'run', '-d', '--name', backendName,
+    '--network', `container:${edgeName}`,
+    '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=1777',
+    '--user', '101:101',
+    '--mount', `type=bind,src=${backendConfig},dst=/etc/nginx/nginx.conf,readonly`,
     '--entrypoint', 'nginx', image, '-g', 'daemon off;'
   ]);
 
@@ -97,7 +98,7 @@ http {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = spawnSync('curl', [
       '--silent', '--show-error', '--fail',
-      '--header', 'Host: localhost',
+      '--header', 'Host: example.com',
       '--header', 'X-Forwarded-For: attacker.example',
       '--header', 'X-Real-IP: attacker.example',
       '--header', 'X-Forwarded-Proto: https',
@@ -117,11 +118,12 @@ http {
     process.stderr.write(`edge logs:\n${edgeLogs.stdout ?? ''}${edgeLogs.stderr ?? ''}`);
     throw new Error('proxy smoke endpoint did not become ready');
   }
-  if (!/^host=localhost$/m.test(body)) throw new Error(`Host was not normalized:\n${body}`);
+  if (!/^response=go-default-upstream$/m.test(body)) throw new Error(`Go default upstream did not answer:\n${body}`);
+  if (!/^host=example.com$/m.test(body)) throw new Error(`Host was not normalized:\n${body}`);
   if (/attacker\.example/.test(body)) throw new Error(`spoofed forwarding identity reached backend:\n${body}`);
   if (!/^proto=http$/m.test(body)) throw new Error(`scheme was not normalized:\n${body}`);
 
-  process.stdout.write('PASS proxy forwarding identity normalization\n');
+  process.stdout.write('PASS Go default upstream and proxy forwarding identity normalization\n');
 } finally {
   cleanup();
 }

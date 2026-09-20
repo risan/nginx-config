@@ -25,8 +25,8 @@ const examples = [
   ['sites-example/spa-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'spa', assetCache: true, ...tlsDefaults }],
   ['sites-example/php.conf', { ...DEFAULT_OPTIONS, profile: 'php', upstream: '127.0.0.1:9000', gzip: false }],
   ['sites-example/php-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'php', upstream: '127.0.0.1:9000', gzip: false, ...tlsDefaults }],
-  ['sites-example/go.conf', { ...DEFAULT_OPTIONS, profile: 'go', upstream: '127.0.0.1:8080', gzip: false }],
-  ['sites-example/go-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'go', upstream: '127.0.0.1:8080', gzip: false, ...tlsDefaults }],
+  ['sites-example/go.conf', { ...DEFAULT_OPTIONS, profile: 'go', upstream: '127.0.0.1:8081', gzip: false }],
+  ['sites-example/go-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'go', upstream: '127.0.0.1:8081', gzip: false, ...tlsDefaults }],
   ['sites-example/proxy.conf', { ...DEFAULT_OPTIONS, profile: 'proxy', upstream: '127.0.0.1:3000', gzip: false, websocket: true }],
   ['sites-example/proxy-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'proxy', upstream: '127.0.0.1:3000', gzip: false, websocket: true, ...tlsDefaults }]
 ];

@@ -79,6 +79,12 @@ The browser download is text. Before installing it:
    TLS, and health endpoints.
 5. Reload gracefully and make a real request before declaring the change live.
 
+The generated HTTP listener defaults to port 8080. The Go profile's loopback
+upstream defaults to `127.0.0.1:8081`, keeping the application listener separate
+from NGINX; the validator rejects loopback upstreams that reuse either enabled
+NGINX listener port. A named service such as `backend:8080` may use the same
+numeric port because it runs in a different network namespace.
+
 The generator cannot configure your service manager, DNS, firewall, certificate
 renewal, trusted load balancer CIDRs, upstream CA, or cache invalidation. Keep
 those decisions in deployment configuration and review them separately.
@@ -163,9 +169,12 @@ docker image inspect ghcr.io/risan/nginx-config@sha256:<published-digest> \
   --format '{{json .Config.Labels}}'
 docker run --rm -d --name nginx-config-release -p 8080:8080 \
   ghcr.io/risan/nginx-config@sha256:<published-digest>
-curl -fsS http://127.0.0.1:8080/healthz
+curl -fsS --header 'Host: localhost' http://127.0.0.1:8080/healthz
 docker stop nginx-config-release
 ~~~
+
+The explicit `Host: localhost` header is required here because the image's
+default server intentionally rejects unknown host names with status 444.
 
 Confirm the manifest lists both platforms, OCI source/revision/version labels
 match the reviewed commit, the digest pull is healthy on a native runner, and
