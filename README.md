@@ -1,906 +1,236 @@
-# Optimized Nginx Configuration
+# NGINX configuration toolkit
 
-Nginx configuration example for maximum performance.
+This repository is a small, copy-and-customize toolkit for the free, open-source
+NGINX server. It contains a Vue + Vite configuration generator, readable
+examples, and a container for the generator itself.
 
-## Table of Contents
-* [Requirements](#requirements)
-* [Nginx Installation](#nginx-installation)
-    * [Nginx Basic Commands](#nginx-basic-commands)
-* [Installation](#installation)
-* [Quick Start Guide](#quick-start-guide)
-* [Configuration Directory Structure](#configuration-directory-structure)
-    * [conf.d](#confd)
-    * [logs](#logs)
-    * [sites-available](#sites-available)
-    * [sites-enabled](#sites-enabled)
-    * [sites-example](#sites-example)
-    * [snippets](#snippets)
-        * [directive](#directive)
-        * [location](#location)
-    * [ssl](#ssl)
-    * [mime.types](#mimetypes)
-    * [nginx.conf](#nginxconf)
-* [Basic Configurations](#basic-configurations)
-    * [`listen`](#the-listen-directive)
-    * [`server_name`](#the-server_name-directive)
-    * [Redirect to non-www server name](#redirect-to-non-www-server-name)
-    * [`root`](#the-root-directive)
-    * [`index`](#the-index-directive)
-    * [`try_files`](#the-try_files-directive)
-    * [`error_page`](#the-error_page-directive)
-    * [`error_log`](#the-error_log-directive)
-    * [`access_log`](#the-access_log-directive)
-* [Drop Request to an Unknown Server Name](#drop-request-to-an-unknown-server-name)
-* [Setup New Website](#setup-new-website)
-* [Setup PHP Website](#setup-php-website)
-* [Setup Reverse Proxy](#setup-reverse-proxy)
-* [Free SSL Certificate with Let's Encrypt](#free-ssl-certificate-with-lets-encrypt)
-    * [Certbot Installation](#certbot-installation)
-    * [Get SSL Certificate](#get-ssl-certificate)
-* [Setup SSL Website](#setup-ssl-website)
-* [Advanced Configurations](#advanced-configurations)
-    * [`user`](#the-user-directive)
-    * [`worker_processes`](#the-worker_processes-directive)
-    * [`worker_rlimit_nofile`](#the-worker_rlimit_nofile-directive)
-    * [`worker_connections`](#the-worker_connections-directive)
-    * [`server_names_hash_max_size`](#the-server_names_hash_max_size-and-server_names_hash_bucket_size-directives) and [`server_names_hash_bucket_size`](#the-server_names_hash_max_size-and-server_names_hash_bucket_size-directives)
-    * [`types_hash_max_size`](#the-types_hash_max_size-and-types_hash_bucket_size-directives) and [`types_hash_bucket_size`](#the-types_hash_max_size-and-types_hash_bucket_size-directives)
-    * [`sendfile`](#the-sendfile-directive)
-    * [`tcp_nopush`](#the-tcp_nopush-directive)
-    * [`tcp_nodelay`](#the-tcp_nodelay-directive)
-    * [`keepalive_timeout`](#the-keepalive_timeout-directive)
-    * [Gzip related directives](#gzip-related-directives)
-* [Credits](#credits)
+The defaults target **NGINX 1.30.5**, the stable release checked on 2026-09-20.
+NGINX 1.31.6 is the current mainline release. Keep the stable patch release and
+the OpenSSL, zlib, PCRE, base-image, and operating-system packages updated;
+there is no single configuration switch that makes every workload faster.
 
-## Requirements
+The project covers NGINX Open Source. NGINX Plus features and third-party
+modules such as Brotli are intentionally outside the default configuration.
+See the [NGINX research notes](docs/research-nginx.md) and [proxy research
+notes](docs/research-proxy.md) for source links and the evidence behind the
+defaults.
 
-The following packages are required to use this configuration example:
-* [Git](https://git-scm.com) for installation
-* [Nginx](https://nginx.org) version 1.13.0 or newer 
-* [PHP-FPM](https://php-fpm.org) (If you want to setup PHP based website)
+## Choose a path
 
-## Nginx Installation
-The following steps will guide you to install the latest stable version of Nginx on Ubuntu or any Debian based Linux distros.
+Use the browser generator when you want a complete `nginx.conf` from supported
+choices. It runs entirely in the browser: it has no account, API, analytics, or
+server-side configuration service. Select a profile, review the warnings, then
+copy or download the file. The generated text is not executed by the app.
 
-To get the latest stable version of Nginx, you need to add the `nginx/stable` PPA to your the repository:
+Use the checked-in generated examples when you want a complete file to review
+and copy into a deployment. Edit a deployment copy; regenerate repository
+examples from the renderer. The five profiles are:
+
+| Profile | Use it for |
+| --- | --- |
+| Static | Files such as HTML, CSS, JavaScript, images, and downloads |
+| SPA | A Vite/React/Vue single-page app with a safe `index.html` fallback |
+| PHP-FPM | A front-controller PHP application |
+| Go | A Go HTTP service behind NGINX |
+| Reverse proxy | A general HTTP application or service |
+
+PHP-FPM, Go, and reverse proxy profiles use different upstream behavior. The
+proxy switches are applied to the generated profile's one proxy location or
+server. Split locations and move a setting when only one application route
+needs it; see [tuning](docs/tuning.md) for the review points.
+
+## Browser generator
+
+From the repository root, install the locked dependencies and run Vite. Open its
+printed URL; run the build from the repository root when you need production files:
 
 ```bash
-sudo add-apt-repository -y ppa:nginx/stable
+npm --prefix web ci
+npm --prefix web run dev
+# In another shell from the repository root: npm --prefix web run build
 ```
 
-Next, update your package index file and finally install the Nginx.
-
-```
-sudo apt-get update
-sudo apt-get install -y nginx
-```
-
-### Nginx Basic Commands
-
-Here are some basic commands you can use to work with Nginx:
+The app imports [`lib/config.js`](lib/config.js), so the form, preview,
+downloads, and checked-in examples use one option model. The renderer rejects
+unknown fields and unsafe values; it does not accept raw NGINX directives.
+Regenerate checked-in examples with:
 
 ```bash
-# Check if the Nginx is running:
-sudo service nginx status
-
-# Start the Nginx if it's not running:
-sudo service nginx start
-
-# Stop the Nginx:
-sudo service nginx stop
-
-# Restart the Nginx:
-sudo service nginx restart
-
-# To test if your Nginx configuration file is valid:
-sudo nginx -t
-
-# When you made a change to the Nginx configuration, 
-# you need to reload the Nginx configuration with the following command:
-sudo service nginx reload
+node scripts/generate-examples.mjs
 ```
 
-## Installation
-To install this optimized Nginx configuration on your machine, you simply need to replace your `nginx` configuration directory with this repository. 
-
-It's always a good idea to backup your current Nginx configuration directory:
+The focused checks below all run from the repository root:
 
 ```bash
-sudo mv /etc/nginx /etc/nginx.bak
+# Install the locked UI dependencies in a clean checkout.
+npm --prefix web ci
+node scripts/generate-examples.mjs --check && node --test tests/config.test.mjs
+npm --prefix web run test:unit && npm --prefix web run build
+npm --prefix web exec -- playwright install --with-deps chromium  # Linux/CI
+npm --prefix web run test:browser
+node scripts/check-nginx-version.mjs && node scripts/verify-nginx-configs.mjs  # needs Docker
 ```
 
-Then download this repository to replace it:
-```bash
-sudo git clone https://github.com/risan/nginx-config.git /etc/nginx
-```
+See [benchmarking and validation](docs/benchmarking.md) for runtime checks.
 
-> Note that this repository only provides you with website configuration examples that you can easily copy.
+## Container quick start
 
-## Quick Start Guide
-
-Make sure you already have [Nginx installed](#nginx-installation). First, you need to backup your current Nginx configuration directory:
-
-```bash
-sudo mv /etc/nginx /etc/nginx.bak
-```
-
-Next, you have to download this repository to replace your Nginx configuration:
+Build and serve the generator locally with Compose:
 
 ```bash
-sudo git clone https://github.com/risan/nginx-config.git /etc/nginx
+docker compose up --build
 ```
 
-Now, suppose you have a website project stored within the `/var/www/awesome.com` directory and you want it to be served from `awesome.com` domain. First, you have to copy the `/etc/sites-example/site.conf` to `sites-available` directory:
-
-```bash
-sudo cp /etc/sites-example/site.conf /etc/sites-available/awesome.com
-```
-
-Secondly, you need to edit the copied configuration file to match your project detail. Open it up in using your favorite text editor:
+Open <http://localhost:8080>; stop it with `Ctrl-C` or `docker compose down`.
+The image serves compiled `dist/` from a small NGINX runtime with no Node,
+source tree. It contains the renderer-generated internal `nginx.conf` needed to
+serve the UI; it does not contain or execute a user's downloaded configuration.
 
 ```bash
-# Open it up with Vim
-sudo vim /etc/sites-available/awesome.com
+docker build -t nginx-config-generator:local .
+docker run --rm -p 8080:8080 nginx-config-generator:local
 ```
 
-Replace all of the occuring `example.com` with `awesome.com`. Also make sure that `root` directive is pointing out to the correct location of your website:
+The container is designed for an unprivileged user. In production keep its root
+filesystem read-only, give only `/tmp` writable space, drop capabilities, and
+enable `no-new-privileges`; see [operations](docs/operations.md).
 
-```nginx
-# For brevity only show the lines that need to be changed.
-
-server {
-    ...
-
-    # The www host server name.
-    server_name www.awesome.com;
-
-    # Redirect to the non-www version.
-    return 301 $scheme://awesome.com$request_uri;
-}
-
-server {
-    ...
-
-    # The non-www host server name.
-    server_name awesome.com;
-
-    # The document root path.
-    root /var/www/awesome.com
-
-    ...
-
-    # Log configuration.
-    error_log /etc/nginx/logs/awesome.com_error.log error;
-    access_log /etc/nginx/logs/awesome.com_access.log main;
-
-    ...
-}
-```
-
-Once your changes have been saved, create a symbolic link to your configuration file within the `sites-enabled` directory:
+The GitHub Actions workflow builds pull requests and `main` without publishing,
+then publishes to GHCR only for an exact stable `vMAJOR.MINOR.PATCH` tag or an
+explicit manual run using `GITHUB_TOKEN`. Manual runs publish traceable
+SHA-derived tags only; tags can move, so only a digest is immutable. They never
+move `latest`, major, or minor aliases. This checkout does not publish
+automatically. The selected release image is:
 
 ```bash
-sudo ln -sfv /etc/nginx/sites-available/awesome.com /etc/nginx/sites-enabled/
-```
-
-To test that your configuration file has no errors, run the following commands:
-
-```bash
-sudo nginx -t
-```
-
-If there are no errors found, you can finally tell Nginx to reload the configuration file like so:
-
-```bash
-sudo service nginx reload
-```
-
-Now your website under the `/var/www/awesome.com` directory should be available from the `http://awesome.com` URL.
-
-## Configuration Directory Structure
-
-Here's an overview of this Nginx configuration directory structure:
-
-```
-|-- conf.d                  # Your costom configuration
-|-- logs                    # Nginx website logs directory
-|-- sites-available         # Your available website configurations
-|-- sites-enabled           # Your enabled website configurations
-|-- sites-example           # Website configuration examples
-|   |-- no-default.conf
-|   |-- site.conf
-|   |-- site-ssl.conf
-|   |-- php.conf
-|   |-- php-ssl.conf
-|   |-- proxy.conf
-|   |-- proxy-ssl.conf
-|-- snippets                # Configuration snippets
-|   |-- directive
-|   |-- location
-|-- ssl                     # SSL certificates directory
-|-- mime.types              # MIME types list
-|-- nginx.conf              # Main configurations
-```
-
-### conf.d
-All of your custom Nginx configurations should be defined here. If you check the `nginx.conf` file, you'll see that all of the files with `.conf` extension within this directory will be included.
-
-### logs
-By default, this is where all of the Nginx error & access log files will be stored.
-
-### sites-available
-This is where you'll store your website configuration files. Note that configuration files stored here are not automatically available to Nginx, you still have to create a symbolic link within the `sites-enabled` directory.
-
-### sites-enabled
-This directory holds all of the enabled website configurations. Usually, this directory only contains symbolic links to the actual configuration files in `sites-available` directory.
-
-### sites-example
-This is where all of the website configuration examples that you can easily copy are stored. Currently, there are 7 configuration examples that you can use:
-
-* `no-default.conf` => To drop request to an unknown server name
-* `site.conf` => Basic website configuration
-* `site-ssl.conf` => Basic website configuration with SSL
-* `php.conf` => PHP based website configuration
-* `php-ssl.conf` => PHP based website configuration with SSL
-* `proxy.conf` => Reverse proxy configuration
-* `proxy-ssl.conf` => Reverse proxy configuration with SSL
-
-### snippets
-This is where you'll find all of the reusable Nginx configuration snippets are. You'll see that some of these snippets are being included on the website configuration examples. There are two directories within it:
-
-#### directive
-This directory holds all of the snippets that contain only a directive configurations (the directives that are not set within any specific block).
-
-* `ssl.conf` => Snippet for SSL configuration
-* `fastcgi.conf` => Parameters setup for FastCGI server
-* `fastcgi-php.conf` => FastCGI parameters for PHP
-* `proxy.conf` => Configuration for proxied website
-* `websocket-proxy.conf` => Proxy setup for websocket support
-
-#### location
-This is where all of the snippets with configuration directives being set within the `location` block goes.
-
-* `cache-control.conf` => The `Cahce-Control` header configuration for some static files
-* `protect-sensitive-files.conf` => Protection for sensitive files
-
-> Note that the `add_header` directive set on the `location` block will replace the other `add_header` directives that are being set on its parent block or any less specific `location` block.
-
-So if you include the `cache-control.conf` on your website configuration, all of the static files that are configured within the `cache-control.conf` snippets won't inherit any headers you've set on the parent block or any less specific `location` block. To work around this, you have to set your header on a specific `location` block:
-
-```nginx
-location ~* \.json$ {
-    add_header Access-Control-Allow-Origin "*";
-}
-```
-
-### ssl
-This is where DHE ciphers parameters and all of the SSL certificates will be stored. Usually, you'll just create symbolic links here that point out to the real certificate path.
-
-### mime.types
-This is the file where you can map file extensions to its MIME types.
-
-### nginx.conf
-This is the main Nginx configuration file.
-
-## Basic Configurations
-
-Here are some basic configurations that are commonly found on website configuration examples at `sites-example` directory.
-
-### The `listen` directive
-This is where you set the port number on which Nginx will listen to. The defaults are port `80` for HTTP and `443` for HTTPS:
-
-```nginx
-server {
-    listen 80;
-    listen [::]:80; # This is for IPv6
-    ...
-}
-
-# For SSL website with HTTP/2 protocol
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    ...
-}
-```
-
-### The `server_name` directive
-This is where you set names of the virtual server. Note that the first name will become the primary server name.
-
-```nginx
-server {
-    ...
-    server_name example.com www.example.com;
-}
-```
-
-### Redirect to non-www server name
-As you might have noticed, the first `server` block on all of the website configuration examples are dealing with a redirection from a www version to the non-www version (e.g. from www.example.com to example.com).
-
-```nginx
-server {
-    listen 80;
-    listen [::]:80;
-    server_name www.example.com;
-
-    # Redirect to the non-www version.
-    return 301 $scheme://example.com$request_uri;
-}
-```
-
-* `301` is the HTTP status code that is set for the response, which means "moved permanently".
-* `$request_uri` is the Nginx embedded variable that holds a full original request URI
-
-### The `root` directive
-This is where you set the root directory for requests.
-
-```nginx
-root /var/www/example.com/public;
-```
-
-### The `index` directive
-You can use this directive to define the files that will be used as an index. Note that the files will be checked in the specified order.
-
-```nginx
-index index.html index.htm;
-```
-
-### The `try_files` directive
-This is the list of files that will be used to serve a request. It will be checked in the given order.
-
-```nginx
-location / {
-    try_files $uri $uri/ =404;
-}
-```
-
-From the above snippet, first Nginx will check if the given `$uri` match any file. If there's no match, it will try to serve it as a directory. Or else it will fallback to display the 404 page.
-
-### The `error_page` directive
-This directive can be used to set a URI for a custom error pages.
-
-```nginx
-# Custom 404 page.
-error_page 404 /404.html;
-```
-
-### The `error_log` directive
-This directive allows you to set the path to the log file. You can also set the log level to any of the following options: `debug`, `info`, `notice`, `warn`, `error`, `crit`, `alert`, or `emerg`.
-
-```nginx
-error_log /etc/nginx/logs/example.com_error.log error;
-```
-
-### The `access_log` directive
-This is where you set the path to the request log file. For performance reason, you can also set this directive `off` to disable the request log.
-
-```nginx
-access_log /etc/nginx/logs/example.com_access.log main;
-```
-
-`main` is referring to the access log format defined on `nginx.conf` file.
-
-## Drop Request to an Unknown Server Name
-
-If a client requests for an unknown server name and there's no default server name defined, by default Nginx will serve the first server configuration found. To prevent this, you have to create a configuration for a default server name where you'll drop the request.
-
-First, copy the `no-default.conf` example:
-
-```bash
-sudo cp /etc/nginx/sites-example/no-default.conf /etc/nginx/sites-available/no-default
-```
-
-Secondly, create a symbolic link to this configuration file within the `sites-enabled` directory:
-
-```bash
-sudo ln -sfv /etc/nginx/sites-available/no-default /etc/nginx/sites-enabled/
-```
-
-Make sure that there's no error on the configuration file:
-
-```bash
-sudo nginx -t
-```
-
-Then finally reload your Nginx configuration:
-```bash
-sudo service nginx reload
-```
-
-## Setup New Website
-
-This section will guide you to set up new static files based website (HTML/CSS/JS) using the available `site.conf` example. Suppose you've put your website project on `/var/www/awesome.com` directory and will serve all of the static files from `/var/www/awesome.com/public` directory.
-
-You've also got the `awesome.com` domain name setup where this website will be served. First, you need to copy the `site.conf` configuration example to `sites-available`:
-
-```bash
-sudo cp /etc/nginx/sites-example/site.conf /etc/nginx/sites-available/awesome.com
-```
-
-Then open up the copied file with your favorite editor:
-
-```bash
-# Open it up in VIM
-sudo vim /etc/nginx/sites-available/awesome.com
-```
-
-Replace all of the references to `example.com` with your `awesome.com` domain:
-
-```nginx
-# For brevity only show the lines that need to be changed.
-
-server {
-    ...
-
-    # The www host server name.
-    server_name www.awesome.com;
-
-    # Redirect to the non-www version.
-    return 301 $scheme://awesome.com$request_uri;
-}
-
-server {
-    ...
-
-    # The non-www host server name.
-    server_name awesome.com;
-
-    # The document root path.
-    root /var/www/awesome.com
-
-    ...
-
-    # Log configuration.
-    error_log /etc/nginx/logs/awesome.com_error.log error;
-    access_log /etc/nginx/logs/awesome.com_access.log main;
-
-    ...
-}
-```
-
-Next, you need to create a symbolic link within the `sites-enabled` directory that points out to this configuration file:
-
-```bash
-sudo ln -sfv /etc/sites-available/awesome.com /etc/sites-enabled/
-```
-
-Make sure that there are no errors on the new configuration file:
-
-```bash
-sudo nginx -t
-```
-
-Lastly reload your Nginx configuration with the following command:
-
-```bash
-sudo service nginx reload
-```
-
-That's it, your website should now be served under the `awesome.com` domain.
-
-## Setup PHP Website
-
-To set up a new PHP based website, the steps are quite similar to [Setup New Website](#setup-new-website) section. But instead of `site.conf`, you'll be using the `php.conf` example file as a base.
-
-Suppose you already set up a domain named `awesome.com` and you'll serve any incoming request from this root directory: `/var/www/awesome.com/public`. Copy the `php.conf` file first:
-
-```bash
-sudo cp /etc/nginx/sites-example/php.conf /etc/nginx/sites-available/awesome.com
-```
-
-Then open it up with your favorite editor:
-
-```bash
-# Open it up in VIM
-sudo vim /etc/nginx/sites-available/awesome.com
-```
-
-Replace all of the references to `example.com` with your `awesome.com` domain.
-
-```nginx
-# For brevity only show the lines that need to be changed.
-
-server {
-    ...
-
-    # The www host server name.
-    server_name www.awesome.com;
-
-    # Redirect to the non-www version.
-    return 301 $scheme://awesome.com$request_uri;
-}
-
-server {
-    ...
-
-    # The non-www host server name.
-    server_name awesome.com;
-
-    # The document root path.
-    root /var/www/awesome.com/public;
-
-    ...
-
-    # Pass PHP file to FastCGI server.
-    location ~ \.php$ {
-        include snippets/directive/fastcgi-php.conf;
-
-        # With php-fpm or other unix sockets.
-        fastcgi_pass unix:/run/php/php7.1-fpm.sock;
-
-        # With php-cgi or other tcp sockets).
-        # fastcgi_pass 127.0.0.1:9000;
-    }
-
-    ...
-
-    # Log configuration.
-    error_log /etc/nginx/logs/awesome.com_error.log error;
-    access_log /etc/nginx/logs/awesome.com_access.log main;
-
-    ...
-}
-```
-
-You also need to set up the FastCGI address correctly with `fastcgi_pass` directive. Suppose you'll use the PHP-FPM as the gateway and connect it through Unix socket in `/run/php/php7.1-fpm.sock`:
-
-```nginx
-location ~ \.php$ {
-    include snippets/directive/fastcgi-php.conf;
-
-    fastcgi_pass unix:/run/php/php7.1-fpm.sock;
-
-    # Or if you happen to connect it through TCP port.
-    # fastcgi_pass 127.0.0.1:9000;
-}
-```
-
-Next, create a symbolic link to this file within the `sites-enabled` directory:
-
-```bash
-sudo ln -sfv /etc/nginx/sites-available/awesome.com /etc/nginx/sites-enabled/
-```
-
-Test your new configuration file and make sure that there are no errors:
-
-```bash
-sudo nginx -t
-```
-
-Finally, reload your Nginx configuration:
-
-```bash
-sudo service nginx reload
-```
-
-## Setup Reverse Proxy
-
-You can use the `proxy.conf` example file as a base to create a reverse proxy site configuration. For example, if you have a Node.JS application running locally on port `3000`, you can expose it to the internet through a reverse proxy.
-
-Suppose you've set up a domain named `awesome.com` to use. First, you need to copy the `proxy.conf` file to the `sites-available` directory:
-
-```bash
-sudo cp /etc/nginx/sites-example/proxy.conf /etc/nginx/sites-available/awesome.com
-```
-
-Open the copied file with your favorite editor:
-
-```bash
-# Open it up in VIM
-sudo vim /etc/nginx/sites-available/awesome.com
-```
-
-Then replace all of the references to `example.com` with your `awesome.com` domain:
-
-```nginx
-# For brevity only show the lines that need to be changed.
-
-# Group of servers that will be proxied to.
-upstream backend {
-    server localhost:3000;
-}
-
-server {
-    ...
-
-    # The www host server name.
-    server_name www.awesome.com;
-
-    # Redirect to the non-www version.
-    return 301 $scheme://awesome.com$request_uri;
-}
-
-server {
-    ...
-
-    # The non-www host server name.
-    server_name awesome.com;
-
-    # The document root path.
-    root /var/www/awesome.com/public;
-
-    ...
-
-    # Log configuration.
-    error_log /etc/nginx/logs/awesome.com_error.log error;
-    access_log /etc/nginx/logs/awesome.com_access.log main;
-
-    ...
-}
-```
-
-Make sure that you also set the correct target server on the first `upstream` block. Note that you can also define multiple servers on which the request will be proxied to:
-
-```nginx
-upstream backend {
-    server localhost:3000;
-}
-```
-
-The `backend` is just a name of the group of servers, so you easily refer to it within other blocks, it can be anything.
-
-Since the Nginx is really good at serving static files, the example configuration will let all of the static files under the given `root` directive being served solely by Nginx—not being proxied to the app.
-
-```nginx
-server {
-    ...
-
-    root /var/www/example.com/public;
-
-    location / {
-        # First attempt to serve request as a file, then proxy it to the
-        # backend group.
-        try_files $uri @backend;
-    }
-
-    ...
-}
-```
-
-The next step would be to create a symbolic link within the `sites-enabled` that refers to this config file:
-
-```bash
-sudo ln -sfv /etc/nginx/sites-available/awesome.com /etc/nginx/sites-enabled/
-```
-
-Test your new configuration file and make sure that there are no errors:
-
-```bash
-sudo nginx -t
-```
-
-Lastly, reload your Nginx configuration with the following command:
-
-```bash
-sudo service nginx reload
-```
-
-## Free SSL Certificate with Let's Encrypt
-
-In order to set up an SSL website, you're going to need a valid SSL certificate. The good news is that you can get it for free from [Let's Encrypt](https://letsencrypt.org).
-
-### Certbot Installation
-
-On this section, you'll be guided to retrieve a free SSL certificate from Let's Encrypt using the [Certbot](https://certbot.eff.org). First, you need to add the `certbot/certbot` PPA to your repository list:
-
-```bash
-sudo add-apt-repository ppa:certbot/certbot
-```
-
-Next, update your packages index and install the `python-certbot-nginx`:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y python-certbot-nginx 
-```
-
-### Get SSL Certificate
-
-Suppose you want to generate an SSL certificate for your `awesome.com` and `www.awesome.com` domains. The first thing you need to do is to set up the non-SSL version of your website. You can refer to the [Setup New Website](#setup-new-website) section for this. 
-
-Note that within your website configuration you need to include the `snippets/basic.conf` or `snippets/location/protect-sensitive-files.conf` snippets. This snippet will allow client to access the `.well-known` directory thus allowing the `certbot` client verifying our domain.
-
-```nginx
-server {
-    listen 80;
-    listen [::]:80;
-    server_name awesome.com;
-    ...
-
-    # Include basic configuration.
-    include snippets/basic.conf;
-}
-```
-
-Next, on your terminal run the following command:
-
-```bash
-sudo certbot --nginx certonly
-```
-
-Just follow the instruction, the `certbot` will guide you. Or if you want to automate it and be done with just one single command, you can do this:
-
-```bash
-sudo certbot certonly --webroot -w /var/www/awesome.com/public -d awesome.com -d www.awesome.com -n -m johndoe@awesome.com --agree-tos
-```
-
-* `--webroot` => Use the webroot plugin
-* `-w` => The root directory of your website
-* `-d` => The domain name of your website
-* `-n` => Use the non-interactive mode
-* `-m` => Email address for notification
-* `--agree-tos` => Agree to TOS
-
-The `certbot` will generate the SSL certificate under the `/etc/letsencrypt/live/awesome.com`. There will be four types of files available to you:
-
-* `fullchain.pem` => Contain all of the certificates (server certificate and follow by any other intermediates)
-* `privkey.pem` => The private key for your certificate
-* `cert.pem` => The server certificate
-* `chain.pem` => Holds additional intermediate certificates
-
-And that's it, you've just got yourself your own SSL certificate ready to use for your website.
-
-## Setup SSL Website
-
-Before setting up a new SSL website, you need to generate strong DH parameters for the DHE ciphers and store it within the `ssl` directory:
-
-```bash
-sudo openssl dhparam -out /etc/nginx/ssl/dhparam.pem 4096
-```
-
-Within the `sites-example` directory there is an SSL version for each of the website configuration type:
-
-- `site-ssl.conf` => For static files based website (HTML/JS/CSS)
-- `php-ssl.conf` => For PHP based website
-- `proxy-ssl.conf` => For reverse proxy site
-
-To set up the SSL version, the steps are quite similar to the non-SSL version explained in the previous sections. You just need to copy the configuration example from the SSL version and set the correct path for the SSL certificate.
-
-```nginx
-# SSL certificate file.
-ssl_certificate ssl/awesome.com/fullchain.pem;
-
-# SSL certificate secret key file.
-ssl_certificate_key ssl/awesome.com/privkey.pem;
-
-# SSL trusted CA certificate file for OCSP stapling.
-ssl_trusted_certificate ssl/awesome.com/chain.pem;
-```
-
-You can just drop your SSL certificate files under the `/etc/nginx/ssl/awesome.com` directory or create a symlink that points to the real path. Or if you happen to use the Let's Encrypt certificate from the previous section, you create it like so:
-
-```bash
-sudo ln -sfv /etc/letsencrypt/live/awesome.com /etc/nginx/ssl/
-```
-
-Once everything is set up, don't forget to test your configuration file first:
-
-```bash
-sudo nginx -t
-```
-
-Then tells Nginx to reload your new configuration:
-
-```bash
-sudo service nginx reload
-```
-
-## Advanced Configurations
-
-### The `user` directive
-This is where you define the `user` and the `group` for the Nginx worker processes. For security purposes, make sure that this is set to the user and group with limited privileges.
-
-```nginx
-user www-data www-data;
-```
-
-### The `worker_processes` directive
-This directive is used to set the number of worker processes. The optimum value depends on the number of CPU cores, the number of hard drives, and many other factors. Setting it to the number of CPU cores is good starting point, but if you're unsure you can just leave it set to `auto`.
-
-```nginx
-worker_processes auto;
-```
-
-Here's the basic formula for calculating the maximum number of connections:
-
-```
-Max. number of connections = worker_processes * worker_connections
-```
-
-### The `worker_rlimit_nofile` directive
-Use this directive to set the maximum number of open files (the `RLIMIT_NOFILE`) for worker processes. Set this directive more than the `worker_connections`.
-
-```nginx
-worker_rlimit_nofile 8192;
-```
-
-### The `worker_connections` directive
-This directive sets the maximum number of simultaneous connections that can be opened by the worker processes. Note that this is not only connections with clients but also any other internal connections (e.g. connections with the proxy server).
-
-```nginx
-events {
-    worker_connections 8000;
-}
-```
-
-### The `server_names_hash_max_size` and `server_names_hash_bucket_size` directives
-If you defined a large set of server names, you'll probably need to increase either the `server_names_hash_max_size` or the `server_names_hash_bucket_size` values. It's recommended that you increase the `server_names_hash_max_size` value first, usually close to the number of server names.
-
-```nginx
-server_names_hash_max_size 1024;
-server_names_hash_bucket_size 32;
-```
-
-By default, the`server_names_hash_bucket_size` is equal to the processor's cache line size. If you want to update it, the value must be a multiple of it  (e.g. 32/64/128).
-
-### The `types_hash_max_size` and `types_hash_bucket_size` directives
-This is where you define the maximum hash size (`types_hash_max_size`) and it's hash bucket size (`types_hash_bucket_size`) for storing MIME types data in hash table.
-
-```nginx
-types_hash_max_size 2048;
-types_hash_bucket_size 32;
-```
-
-### The `sendfile` directive
-This directive is used to enable/disable the use of `sendfile()`. If it's set to `on`, it can speed up static file transfers by using the `sendfile()` rather than the `read()` and `write()` combination. This is because `sendfile()` has the ability to transfer data directly from the file descriptor.
-
-```nginx
-sendfile on;
-```
-
-For FreeBSD user, you also have to set the `aio` directive in order to use this feature.
-
-```nginx
-sendfile on;
-aio on;
-```
-
-### The `tcp_nopush` directive
-This directive is used to enable/disable the `TCP_CORK` socket option (the `TCP_NOPUSH` option on FreeBSD). Setting it to `on` can optimize the amount of data that is being sent at once. This will prevent Nginx from sending a partial frame. As a result, it will increase the throughput since TCP frames will be filled up before being sent out.
-
-```nginx
-tcp_nopush on;
-```
-
-Note that you'll also need to activate the `sendfile` directive in order to enable this option.
-
-### The `tcp_nodelay` directive
-You can set this directive to enable/disable the `TCP_NODELAY` option. By default, the TCP stack implements a mechanism to delay sending the data up to 200ms. This is to make sure that it won't send a packet that would be too small.
-
-However, nowadays chances are so small that our files won't fill up the buffer immediately. Thus we can turn `on` this option to force the socket to send the data in its buffer immediately.
-
-```nginx
-tcp_nodelay on;
-```
-
-### The `keepalive_timeout` directive
-This directive is used to set a timeout of which a keep-alive connection will stay open. The longer the duration is, the better for the client, especially on SSL connection. The downside is the worker connection is occupied much longer.
-
-```nginx
-keepalive_timeout 20s;
-```
-
-### Gzip related directives
-To enable Gzip compression, you can set the `gzip` directive to `on`:
-
-```nginx
-gzip on;
-```
-
-There are also several other directives you can set related to gzip:
-
-* `gzip_comp_level` => The gzip compression level (1-9). 5 is a perfect compromise between size and CPU usage, offering about 75% reduction for most ASCII files (almost identical to level 9).
-* `gzip_min_length` => The minimum length of a response that will be gzipped. Don't compress a small file that is unlikely to shrink much. The small file is also usually ended up in larger file sizes after gzipping.
-* `gzip_proxied` => Enables or disables gzipping of responses for proxied connection.
-* `gzip_vary` => Enables or disables inserting the “Vary: Accept-Encoding” header in response.
-
-## Credits
-
-All of these configurations setup are gathered from the following resources:
-
-* [Nginx Documentation](http://nginx.org/en/docs/)
-* [Nginx Configs Boilerplate](https://github.com/h5bp/server-configs-nginx) by [h5bp](https://h5bp.github.io)
-* [Nginx Optimization](https://t37.net/nginx-optimization-understanding-sendfile-tcp_nodelay-and-tcp_nopush.html) by [Fred de Villamil](https://t37.net)
-
-
-
+docker pull ghcr.io/risan/nginx-config:2.0.0
+# Use the digest recorded after publishing when an immutable reference is needed.
+docker pull ghcr.io/risan/nginx-config@sha256:<published-digest>
+```
+
+The package may start private. Read back its package visibility after the
+workflow and change it deliberately; anonymous pulls work only after it is
+public, otherwise authenticate to `ghcr.io` first. Review the workflow under
+[`.github/workflows/`](.github/workflows/) before tagging.
+
+## Use a generated configuration
+
+Treat a generated file as a reviewed starting point. It contains placeholders
+for host names, paths, upstreams, and certificates; replace them with values
+from your deployment and inspect every optional block.
+
+1. Save the current configuration and record the running build:
+
+   ```bash
+   sudo nginx -V 2>&1 | tee /tmp/nginx-build.txt
+   sudo cp -a /etc/nginx /etc/nginx.backup.$(date +%Y%m%d%H%M%S)
+   ```
+
+2. Put the reviewed file in a staging path and check it with the same NGINX
+   package, modules, paths, and user that will run it:
+
+   ```bash
+   sudo nginx -t -c /etc/nginx/nginx.conf
+   sudo nginx -T -c /etc/nginx/nginx.conf > /tmp/nginx-expanded.conf
+   ```
+
+3. Reload only after the test succeeds:
+
+   ```bash
+   sudo nginx -s reload
+   ```
+
+   A failed reload should leave the old workers serving traffic, but always
+   check the error log and a real request after a change.
+
+Do not replace `/etc/nginx` blindly. Preserve distribution-managed includes,
+certificate permissions, log ownership, and module packages. Use a separate
+`sites-available` file and symlink it into `sites-enabled` when that is how the
+distribution is laid out.
+
+## Generator options and their limits
+
+The generator exposes bounded choices rather than arbitrary directives:
+
+| Choice | What it changes | Review before enabling |
+| --- | --- | --- |
+| TLS | HTTPS listener, certificate paths, TLS 1.2/1.3, and HTTP/2 | Certificate chain, key permissions, DNS, and redirect behavior |
+| Gzip | Compressible text responses at a low CPU level | Static/SPA may enable it; PHP/Go/proxy are off by default and need a BREACH review |
+| Asset cache | Long cache for Vite-style hashed assets and `/assets/` files | Enable only when every matched URL is immutable; missing assets remain 404 |
+| WebSocket | Upgrade headers for the generated proxy service | Idle timeout and backend ping behavior; split routes manually when needed |
+| Streaming | Response buffering for the generated proxy service | Heartbeats, timeout gaps, memory, and upload behavior; request buffering stays on |
+| Public proxy cache | Cache only explicitly public responses in the generated proxy service | Auth, cookies, `Vary`, invalidation, and privacy; split routes manually when needed |
+| Rate limit | A bounded per-IP limit for the whole generated server | NAT users, IPv6, HTTP/2 concurrency, and dry-run results; split routes manually when needed |
+| HSTS | Browser HTTPS enforcement | Enable only after every affected host is HTTPS-ready |
+
+TLS, HSTS, proxy caching, WebSockets, streaming, and rate limits are opt-in.
+The generator cannot know your identity model, trusted load balancer addresses,
+backend TLS CA, upload-streaming safety, cache invalidation policy, or endpoint
+capacity. Configure those deployment-specific policies manually and test them.
+In particular, do not trust `X-Forwarded-For` from arbitrary clients, and do
+not enable a shared cache for authenticated responses. The WebSocket, streaming,
+proxy-cache, and rate-limit switches apply to the generated service-wide proxy
+location or server. Edit the output into separate locations when only one route
+needs a behavior.
+
+## Safe baseline ideas
+
+The canonical configuration starts with `worker_processes auto`, a portable
+`worker_connections` starting point, `sendfile` for ordinary files, buffered
+proxy/FastCGI responses, public static text gzip, and long caching only for
+hashed assets. Match service file limits before increasing connection capacity;
+dynamic gzip is off by default. Open-file caches, upstream caches, AIO, large
+buffers, affinity, `reuseport`, and aggressive limits remain measured opt-ins.
+Keep logs useful without logging cookies or secrets. See [tuning](docs/tuning.md) and
+[benchmarking](docs/benchmarking.md) before changing values globally.
+
+## Important security defaults
+
+Use the newest patched stable NGINX and inspect `nginx -V` so the running build
+matches its modules. Run dedicated unprivileged workers, protect private keys,
+deny unknown hosts and sensitive files, bound request bodies, and hide the
+version. CSP, HSTS preload, cross-origin policy, and permissions policy must
+match the application. For HTTPS upstreams enable SNI and CA verification; for
+load balancers trust only exact `set_real_ip_from` CIDRs. These deployment
+policies are outside the flat browser form.
+
+HTTP/3 remains experimental: it needs UDP/TCP reachability, TLS 1.3, module
+support, and a current security patch. Keep it off until a real client and TCP
+fallback are tested.
+
+## Layout
+
+```text
+lib/config.js                 canonical renderer and option validation
+scripts/generate-examples.mjs generated checked-in examples
+nginx.conf + sites-example/   profiles produced by the renderer
+web/                          Vue + Vite browser generator
+snippets/                     small reusable directives and locations
+docs/                         tuning, security, operations, migration, research
+Dockerfile / compose.yaml     local generator image and Compose quick start
+```
+
+Keep `mime.types` from the upstream package current when adding a type; do not
+replace it with a short hand-written list. Distribution package layouts and
+optional modules vary, so validate this repository with the actual image or
+package you deploy. The PHP form accepts a TCP `host:port` upstream only. If
+PHP-FPM uses a Unix socket, replace `fastcgi_pass` in the downloaded file with a
+reviewed `unix:/run/...` value and run `nginx -t`; a Unix path cannot be entered
+in the form.
+
+## Further reading
+
+- [Performance and configuration tuning](docs/tuning.md)
+- [Security checklist and deployment recipes](docs/security.md)
+- [Container, release, and operations guide](docs/operations.md)
+- [Benchmarking and validation](docs/benchmarking.md)
+- [Migration from the old repository](docs/migration.md)
+- [NGINX baseline research](docs/research-nginx.md)
+- [Proxy, container, and GHCR research](docs/research-proxy.md)
+- [Official NGINX downloads](https://nginx.org/en/download.html)
+- [Official NGINX documentation](https://nginx.org/en/docs/)
+
+The project remains under the [MIT license](LICENSE). Historical attribution:
+[NGINX documentation](https://nginx.org/en/docs/) and [h5bp server
+configs](https://github.com/h5bp/server-configs-nginx); current behavior is
+checked against official documentation.

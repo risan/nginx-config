@@ -1,0 +1,28 @@
+# Node/Vite dependencies and build output
+node_modules/
+web/node_modules/
+dist/
+web/dist/
+
+# Test and browser-run artifacts
+coverage/
+test-results/
+playwright-report/
+.nyc_output/
+.vite/
+web/.vite/
+
+# Local environment and tooling
+.env
+.env.*
+!.env.example
+.DS_Store
+*.swp
+*.swo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local container/runtime output
+docker-compose.override.yml

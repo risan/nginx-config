@@ -1,0 +1,77 @@
+name: nginx-config
+
+services:
+  generator:
+    build:
+      context: .
+      args:
+        # Keep this equal to lib/version.js. CI checks the two values.
+        NGINX_VERSION: "1.30.5"
+        BUILD_VERSION: "local"
+        VCS_REF: "local"
+    image: nginx-config-generator:local
+    ports:
+      - "${NGINX_CONFIG_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--header=Host:localhost", "--output-document=/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  # Optional TLS mode. Create the two files first, then run:
+  #
+  #   NGINX_TLS_CONFIG=./path/to/nginx.conf \
+  #   NGINX_TLS_CERTS=./path/to/certs \
+  #   docker compose --profile tls up generator-tls
+  #
+  # The mounted configuration must listen on 8443 and point at certificate
+  # paths under /etc/nginx/tls. Set NGINX_TLS_SERVER_NAME to the same name as
+  # the mounted config's server_name so the local health check sends the right
+  # TLS SNI. The certificate directory and files must be readable by UID 101.
+  # The default generator remains HTTP-only.
+  generator-tls:
+    profiles: [tls]
+    build:
+      context: .
+      args:
+        NGINX_VERSION: "1.30.5"
+        BUILD_VERSION: "local-tls"
+        VCS_REF: "local"
+    image: nginx-config-generator:local
+    environment:
+      NGINX_TLS_SERVER_NAME: "${NGINX_TLS_SERVER_NAME:-example.com}"
+    ports:
+      - "${NGINX_CONFIG_TLS_PORT:-8443}:8443"
+    volumes:
+      - "${NGINX_TLS_CONFIG:-./nginx.tls.conf}:/etc/nginx/nginx.conf:ro"
+      - "${NGINX_TLS_CERTS:-./ssl}:/etc/nginx/tls:ro"
+    healthcheck:
+      # This is a local probe for the mounted TLS config. It skips validation
+      # because a local self-signed certificate is common for this example.
+      test:
+        - CMD-SHELL
+        - >-
+          curl --silent --show-error --fail --insecure --output /dev/null
+          --header "Host: $${NGINX_TLS_SERVER_NAME}"
+          --resolve "$${NGINX_TLS_SERVER_NAME}:8443:127.0.0.1"
+          "https://$${NGINX_TLS_SERVER_NAME}:8443/healthz"
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
