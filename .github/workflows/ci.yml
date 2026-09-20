@@ -72,17 +72,17 @@ jobs:
       - name: Parse every generated profile in stable NGINX
         run: node scripts/verify-nginx-configs.mjs
       - name: Build the production image without registry credentials
-        run: docker build --pull --tag nginx-config-generator:ci --build-arg VCS_REF="$GITHUB_SHA" --build-arg BUILD_VERSION=ci .
+        run: docker build --pull --tag nginx-config:ci --build-arg VCS_REF="$GITHUB_SHA" --build-arg BUILD_VERSION=ci .
       - name: Exercise the image as an unprivileged read-only service
-        run: sh scripts/smoke-image.sh nginx-config-generator:ci
-      - name: Exercise proxy forwarding headers
-        run: node scripts/smoke-proxy.mjs
+        run: sh scripts/smoke-image.sh nginx-config:ci
+      - name: Exercise proxy forwarding headers through the image
+        run: node scripts/smoke-proxy.mjs nginx-config:ci
       - name: Exercise proxy cache privacy and method guards
-        run: node scripts/smoke-cache.mjs
+        run: node scripts/smoke-cache.mjs nginx-config:ci
       - name: Exercise PHP-FPM script checks
-        run: node scripts/smoke-php.mjs
+        run: node scripts/smoke-php.mjs nginx-config:ci
       - name: Exercise TLS redirect and certificate path
-        run: node scripts/smoke-tls.mjs
+        run: node scripts/smoke-tls.mjs nginx-config:ci
       - name: Validate Compose definition
         run: |
           docker compose -f compose.yaml config

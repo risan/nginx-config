@@ -2,7 +2,9 @@
 
 This repository is a small, copy-and-customize toolkit for the free, open-source
 NGINX server. It contains a Vue + Vite configuration generator, readable
-examples, and a container for the generator itself.
+examples, and an optimized NGINX runtime image for user sites and services.
+The generator is a separate client application; its Vue assets are not packaged
+into the runtime image.
 
 The defaults target **NGINX 1.30.5**, the stable release checked on 2026-09-20.
 NGINX 1.31.6 is the current mainline release. Keep the stable patch release and
@@ -21,6 +23,8 @@ Use the browser generator when you want a complete `nginx.conf` from supported
 choices. It runs entirely in the browser: it has no account, API, analytics, or
 server-side configuration service. Select a profile, review the warnings, then
 copy or download the file. The generated text is not executed by the app.
+Deploy the built `web/` client separately through a Workers-compatible static
+deployment; the UI downloads configuration files for a user-managed runtime.
 
 Use the checked-in generated examples when you want a complete file to review
 and copy into a deployment. Edit a deployment copy; regenerate repository
@@ -59,6 +63,38 @@ Regenerate checked-in examples with:
 node scripts/generate-examples.mjs
 ```
 
+To connect the client manually in the Cloudflare Dashboard, import this
+repository into a Workers project named `nginx-config-generator`, set the
+project root to `web`, use
+`npm run build` as the build command, and use `npx wrangler deploy`
+as the deploy command. The repository's
+[`web/wrangler.jsonc`](web/wrangler.jsonc) points Wrangler at `dist` and uses
+explicit `404-page` handling. The checked-in `web/public/_headers` supplies
+the browser security headers. Connect the operator's account and choose any
+account-specific settings in the Dashboard; this repository does not promise a
+particular deployment URL or include an automatic GitHub deployment workflow.
+
+To preview or publish the client through Wrangler, run these commands from the
+repository root. The deploy commands require the operator's Cloudflare
+authentication:
+
+```bash
+npm --prefix web ci
+npm --prefix web run workers:dev       # local Workers runtime; keep this running separately
+```
+
+For a build check and deployment, use separate commands or shells:
+
+```bash
+npm --prefix web run build
+npm --prefix web run deploy:dry-run    # build and inspect without publishing
+npm --prefix web run deploy            # build and publish after account review
+```
+
+The UI downloads configuration text; it does not install that text into the
+NGINX runtime. The resulting site or service still needs a reviewed full
+configuration and read-only content mount.
+
 The focused checks below all run from the repository root:
 
 ```bash
@@ -73,22 +109,43 @@ node scripts/check-nginx-version.mjs && node scripts/verify-nginx-configs.mjs  #
 
 See [benchmarking and validation](docs/benchmarking.md) for runtime checks.
 
-## Container quick start
+## NGINX runtime quick start
 
-Build and serve the generator locally with Compose:
+Build and start the NGINX runtime locally with Compose:
 
 ```bash
-docker compose up --build
+docker compose config
+docker compose up --build nginx
 ```
 
-Open <http://localhost:8080>; stop it with `Ctrl-C` or `docker compose down`.
-The image serves compiled `dist/` from a small NGINX runtime with no Node,
-source tree. It contains the renderer-generated internal `nginx.conf` needed to
-serve the UI; it does not contain or execute a user's downloaded configuration.
+The image ships a small welcome page, listens on port 8080, and accepts
+`Host: localhost`. Unknown hosts receive 444. Check the page and health
+endpoint, then stop it with `Ctrl-C` or `docker compose down`:
 
 ```bash
-docker build -t nginx-config-generator:local .
-docker run --rm -p 8080:8080 nginx-config-generator:local
+curl -i -H 'Host: localhost' http://localhost:8080/
+curl -i -H 'Host: localhost' http://localhost:8080/healthz
+```
+
+The image contains no Node, Vue assets, or generator build. Mount a reviewed
+complete configuration and the user site or service content read-only when
+running a workload:
+
+```bash
+NGINX_CONFIG=./path/to/nginx.conf \
+NGINX_CONTENT=./path/to/public \
+NGINX_SERVER_NAME=localhost \
+docker compose up --build nginx
+```
+
+The configuration must listen on 8080 and use `/usr/share/nginx/html` when it
+serves the mounted content. The full file replaces `/etc/nginx/nginx.conf`;
+the content mount replaces `/usr/share/nginx/html`. Set `NGINX_SERVER_NAME` to
+the mounted configuration's `server_name`; `localhost` is the local example.
+
+```bash
+docker build -t nginx-config:local .
+docker run --rm -p 8080:8080 nginx-config:local
 ```
 
 The container is designed for an unprivileged user. In production keep its root
@@ -100,10 +157,11 @@ then publishes to GHCR only for an exact stable `vMAJOR.MINOR.PATCH` tag or an
 explicit manual run using `GITHUB_TOKEN`. Manual runs publish traceable
 SHA-derived tags only; tags can move, so only a digest is immutable. They never
 move `latest`, major, or minor aliases. This checkout does not publish
-automatically. The selected release image is:
+automatically. The changed runtime purpose is released as `v3.0.0`; after that
+release has a recorded digest, pull it as follows:
 
 ```bash
-docker pull ghcr.io/risan/nginx-config:2.0.1
+docker pull ghcr.io/risan/nginx-config:3.0.0
 # Use the digest recorded after publishing when an immutable reference is needed.
 docker pull ghcr.io/risan/nginx-config@sha256:<published-digest>
 ```
@@ -207,7 +265,7 @@ nginx.conf + sites-example/   profiles produced by the renderer
 web/                          Vue + Vite browser generator
 snippets/                     small reusable directives and locations
 docs/                         tuning, security, operations, migration, research
-Dockerfile / compose.yaml     local generator image and Compose quick start
+Dockerfile / compose.yaml     NGINX runtime image and Compose quick start
 ```
 
 Keep `mime.types` from the upstream package current when adding a type; do not

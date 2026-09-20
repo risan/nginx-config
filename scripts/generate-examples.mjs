@@ -18,6 +18,15 @@ const tlsDefaults = {
 
 const examples = [
   ['nginx.conf', { ...DEFAULT_OPTIONS }],
+  ['docker/nginx.conf', {
+    ...DEFAULT_OPTIONS,
+    profile: 'static',
+    serverName: 'localhost',
+    listenPort: 8080,
+    documentRoot: '/usr/share/nginx/html',
+    tls: false,
+    assetCache: false
+  }],
   ['sites-example/no-default.conf', () => generateDefaultServer(80)],
   ['sites-example/site.conf', { ...DEFAULT_OPTIONS }],
   ['sites-example/site-ssl.conf', { ...DEFAULT_OPTIONS, ...tlsDefaults }],

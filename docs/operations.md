@@ -1,9 +1,37 @@
 # Operations, containers, and releases
 
-This repository publishes a browser configuration helper. Its container serves the
-Vue build; it does not deploy an exported NGINX configuration and it does not
-proxy a user's application. Run generated files in a separately reviewed NGINX
-service.
+The `web/` directory is a client-only configuration helper. Deploy its built
+assets separately through a Workers-compatible static deployment; the UI
+downloads configuration text and does not run it. The container is an optimized
+NGINX runtime for user sites and services. It ships a small welcome page, uses
+port 8080, accepts `Host: localhost`, and rejects unknown hosts with 444.
+
+## Workers generator deployment
+
+Connect the repository manually in the Cloudflare Dashboard. Use the Worker
+name `nginx-config-generator`, project root `web`, `npm run build` as the build
+command, and
+`npx wrangler deploy` as the deploy command. The repository's
+[`web/wrangler.jsonc`](../web/wrangler.jsonc) is the deployment configuration:
+it publishes `web/dist`, uses explicit `404-page` handling, and does not contain
+an account-specific URL or zone binding. The checked-in `web/public/_headers`
+supplies browser security headers. Do not add a GitHub Actions deployment
+workflow for this client.
+
+For the same flow from a checked-out repository:
+
+~~~bash
+cd web
+npm ci
+npm run build
+npm run deploy:dry-run
+npm run deploy
+~~~
+
+`npm run workers:dev` starts the local Workers runtime. The deploy command
+requires the operator's Cloudflare authentication; this repository records no
+deployment result or public URL. The UI only downloads generated configuration
+text. A user still validates and mounts that file into the NGINX runtime.
 
 ## Local container
 
@@ -11,14 +39,15 @@ Build and start the local image:
 
 ~~~bash
 docker compose config
-docker compose up --build
+docker compose up --build nginx
 ~~~
 
-Visit http://localhost:8080 and confirm the page loads. In another shell:
+Confirm the default page and health endpoint with the intended Host header:
 
 ~~~bash
-docker compose ps
-curl -i http://localhost:8080/
+docker compose ps nginx
+curl -i --header 'Host: localhost' http://localhost:8080/
+curl -i --header 'Host: localhost' http://localhost:8080/healthz
 ~~~
 
 The image should report a healthy HTTP response. Stop it with Ctrl-C or:
@@ -30,9 +59,26 @@ docker compose down
 For a direct image build:
 
 ~~~bash
-docker build -t nginx-config-generator:local .
-docker run --rm -p 8080:8080 nginx-config-generator:local
+docker build -t nginx-config:local .
+docker run --rm -p 8080:8080 nginx-config:local
 ~~~
+
+The image includes the generated default `/etc/nginx/nginx.conf` and a small
+site under `/usr/share/nginx/html`. For a real workload, mount the complete
+reviewed configuration and the site or service content read-only:
+
+~~~bash
+NGINX_CONFIG=./path/to/nginx.conf \
+NGINX_CONTENT=./path/to/public \
+NGINX_SERVER_NAME=localhost \
+docker compose up --build nginx
+~~~
+
+The mounted configuration must listen on 8080 and use
+`/usr/share/nginx/html` for static content. The two mounts replace the image
+defaults at `/etc/nginx/nginx.conf` and `/usr/share/nginx/html`. Set
+`NGINX_SERVER_NAME` to the mounted configuration's `server_name`; `localhost`
+is the local example used by the health check.
 
 Compose also has an opt-in TLS service. Create a configuration that listens on
 8443 and uses certificate paths under /etc/nginx/tls, then mount it and its
@@ -44,27 +90,24 @@ TLS SNI. The mounted directory and files must be readable by UID 101:
 NGINX_TLS_CONFIG=./nginx.tls.conf \
 NGINX_TLS_CERTS=./ssl \
 NGINX_TLS_SERVER_NAME=example.com \
-docker compose --profile tls up --build generator-tls
+docker compose --profile tls up --build nginx-tls
 ~~~
 
 The default HTTP service stays on 8080. Do not mount production private keys
-into the generator unless the host permissions and the TLS configuration have
-been reviewed.
+unless the host permissions and the TLS configuration have been reviewed.
 
 Use Compose's read-only root filesystem, a small tmpfs for /tmp, dropped
 capabilities, and no-new-privileges settings when exposing the image beyond a
 developer laptop. Keep the published port narrow. Do not mount a user's
-production NGINX directory into the generator container.
+production NGINX directory into the runtime container.
 
-The multi-stage build should compile the web app with Node and copy only web
-dist/ plus the generated internal nginx.conf into the NGINX runtime. That
-internal file only serves the generator UI; downloaded application
-configurations remain separate artifacts. This repository uses the Docker
-Official `nginx:1.30.5-alpine` image and switches to its shipped numeric UID
-101:101, with port 8080 and writable temporary paths under `/tmp`. It does not
-use the separate nginxinc unprivileged image, so do not mix their paths or
-entrypoint assumptions. A runtime image should not include npm, source files,
-package caches, a shell used only for debugging, or credentials.
+The runtime image contains no Node toolchain, Vue assets, `dist/` tree, or
+generator source. It uses the Docker Official `nginx:1.30.5-alpine` image and
+its shipped numeric UID 101:101, with port 8080 and writable temporary paths
+under `/tmp`. The canonical renderer generates the default config and checked-in
+profiles; validate a downloaded or edited full config before mounting it. Do
+not mix these paths or entrypoint assumptions with the separate nginxinc
+unprivileged image.
 
 ## Exported configurations
 
@@ -85,13 +128,14 @@ from NGINX; the validator rejects loopback upstreams that reuse either enabled
 NGINX listener port. A named service such as `backend:8080` may use the same
 numeric port because it runs in a different network namespace.
 
-The generator cannot configure your service manager, DNS, firewall, certificate
-renewal, trusted load balancer CIDRs, upstream CA, or cache invalidation. Keep
-those decisions in deployment configuration and review them separately.
+The renderer and Workers UI cannot configure your service manager, DNS, firewall,
+certificate renewal, trusted load balancer CIDRs, upstream CA, or cache
+invalidation. Keep those decisions in deployment configuration and review them
+separately.
 
 ## Logs and health
 
-The generator image should write access and error logs to stdout/stderr so the
+The runtime image should write access and error logs to stdout/stderr so the
 container runtime can collect them. A health check must make an HTTP request to
 the local health endpoint; checking only that an nginx process exists can miss a
 broken listener or configuration.
@@ -107,18 +151,18 @@ security advisory or base-image status changes. Pin a digest for a release
 when reproducibility matters, then refresh it through a reviewed update. A
 permanent digest misses fixes; a floating tag changes silently.
 
-Tag images with the source commit and release version. The selected release is
-`ghcr.io/risan/nginx-config:2.0.1`. A `sha-<commit>` tag is traceable to a
-source commit but remains a mutable registry tag; only a digest reference is
-immutable:
+Tag images with the source commit and release version. The changed runtime
+purpose is released as `v3.0.0`; use its image tag after the release workflow
+records the digest. A `sha-<commit>` tag is traceable to a source commit but
+remains a mutable registry tag; only a digest reference is immutable:
 
 ~~~bash
-docker pull ghcr.io/risan/nginx-config:2.0.1
+docker pull ghcr.io/risan/nginx-config:3.0.0
 docker pull ghcr.io/risan/nginx-config@sha256:<published-digest>
 ~~~
 
-Do not assume the browser image's NGINX version is the same as the NGINX package
-that will run an exported configuration; inspect each image separately.
+The runtime image's NGINX version is not proof that another host package can run
+an exported configuration; inspect each deployment separately.
 
 ## GitHub Container Registry
 
@@ -153,8 +197,8 @@ A release handoff is:
 ~~~bash
 git switch main
 git pull --ff-only
-git tag -a v2.0.1 -m "Release v2.0.1"
-git push origin v2.0.1
+git tag -a v3.0.0 -m "Release v3.0.0"
+git push origin v3.0.0
 ~~~
 
 Review the generated image, digest, labels, health check, package visibility,
@@ -163,7 +207,7 @@ and manifest platforms after the workflow finishes. The release workflow builds
 inspect, not the earlier local single-platform build. For example:
 
 ~~~bash
-docker buildx imagetools inspect ghcr.io/risan/nginx-config:2.0.1
+docker buildx imagetools inspect ghcr.io/risan/nginx-config:3.0.0
 docker pull ghcr.io/risan/nginx-config@sha256:<published-digest>
 docker image inspect ghcr.io/risan/nginx-config@sha256:<published-digest> \
   --format '{{json .Config.Labels}}'
@@ -190,8 +234,8 @@ When a stable patch is released:
    both Compose services, smoke-test defaults, generated examples, and dated
    documentation. `lib/version.js` is canonical for generated text, but these
    build and release pins are explicit interfaces and must stay in sync.
-3. Refresh the pinned base-image digest, Node builder digest, and lockfile as
-   applicable. Verify each digest belongs to the intended multi-platform tag.
+3. Refresh the pinned base-image digest and lockfile as applicable. Verify the
+   digest belongs to the intended multi-platform tag.
 4. Run `node scripts/check-nginx-version.mjs` and the full renderer, browser,
    NGINX syntax, runtime, and container checks; the version checker is a guard,
    not a substitute for reviewing every pin and example.

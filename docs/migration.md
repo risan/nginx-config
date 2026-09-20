@@ -5,6 +5,10 @@ modernized repository has one canonical renderer and full generated profiles.
 It targets stable free NGINX 1.30.5 as checked on 2026-09-20 and keeps workload
 choices explicit.
 
+The runtime-purpose change is released as `v3.0.0`; existing image tags remain
+unchanged. Use the v3 runtime contract when adopting the image for a site or
+service.
+
 Read this guide before replacing a live /etc/nginx directory.
 
 ## What moved
@@ -14,9 +18,11 @@ baseline. It is generated from lib/config.js and is the useful starting point
 for a whole NGINX configuration; it is not a file that automatically discovers
 your application's settings.
 
-The browser app lives under web/. Its downloads are separate text artifacts:
-serving the generator container does not install or run a downloaded NGINX
-configuration.
+The client-only browser app lives under `web/` and is hosted separately through
+the operator's Workers deployment. Its downloads are text artifacts. The NGINX
+runtime image does not package the Vue app: mount a reviewed complete config at
+`/etc/nginx/nginx.conf` and user content at `/usr/share/nginx/html`, both
+read-only, when running a site or service.
 
 Use the generated root nginx.conf and sites-example/*.conf files for repeatable
 examples, or use the Vue form for bounded choices:

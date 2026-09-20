@@ -42,14 +42,14 @@ jobs:
       - name: Parse every profile in stable NGINX
         run: node scripts/verify-nginx-configs.mjs
       - name: Build the candidate without registry credentials
-        run: docker build --pull --tag nginx-config-generator:release-ci --build-arg VCS_REF="$GITHUB_SHA" --build-arg BUILD_VERSION=release-ci .
+        run: docker build --pull --tag nginx-config:release-ci --build-arg VCS_REF="$GITHUB_SHA" --build-arg BUILD_VERSION=release-ci .
       - name: Exercise the candidate image
         run: |
-          sh scripts/smoke-image.sh nginx-config-generator:release-ci
-          node scripts/smoke-proxy.mjs nginx-config-generator:release-ci
-          node scripts/smoke-cache.mjs nginx-config-generator:release-ci
-          node scripts/smoke-php.mjs nginx-config-generator:release-ci
-          node scripts/smoke-tls.mjs nginx-config-generator:release-ci
+          sh scripts/smoke-image.sh nginx-config:release-ci
+          node scripts/smoke-proxy.mjs nginx-config:release-ci
+          node scripts/smoke-cache.mjs nginx-config:release-ci
+          node scripts/smoke-php.mjs nginx-config:release-ci
+          node scripts/smoke-tls.mjs nginx-config:release-ci
 
   publish:
     name: Publish multi-architecture GHCR image

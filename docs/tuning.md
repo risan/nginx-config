@@ -5,6 +5,11 @@ matches a workload and improves a measured result. Keep a before/after record
 for throughput, error rate, p50/p95/p99 latency, CPU, memory, open files, and
 network and disk I/O. Warm and cold cache runs answer different questions.
 
+The Vue + Vite generator is a separate client deployed through Workers. The
+Docker image runs NGINX for mounted user content and a reviewed generated
+configuration. The values below are starting points for that runtime, not
+universal best settings; test them against the actual site or service.
+
 The [NGINX research baseline](research-nginx.md) and [proxy research
 baseline](research-proxy.md) contain the source links behind this guide. This
 page is the short operational version.
@@ -90,7 +95,7 @@ when a deployment must be discovered promptly. `immutable` is correct only if
 the URL changes whenever the bytes change. NGINX already emits validators for
 static files; do not disable `ETag` or `Last-Modified` as a speed trick.
 
-The generator's asset-cache toggle scopes immutable caching to Vite-style hashed
+The renderer's asset-cache toggle scopes immutable caching to Vite-style hashed
 asset names and, for SPAs, keeps `/assets/` on a strict `try_files ... =404`
 path. Inspect the generated location and enable it only when every matched URL
 is immutable; a missing JavaScript or CSS file must remain a 404.
@@ -136,7 +141,7 @@ Do not use `gzip_types *`: images, video, archives, and most modern fonts are
 already compressed. A higher level can save a few more bytes while increasing
 CPU and tail latency; compare bytes, CPU, and p95/p99 before changing it.
 
-The generator keeps gzip off by default for PHP-FPM, Go, and general proxy
+The renderer keeps gzip off by default for PHP-FPM, Go, and general proxy
 responses. If dynamic gzip is explicitly enabled, restrict it to reviewed
 public responses and check for reflected secrets before enabling it;
 BREACH makes blanket compression unsafe. Static and SPA profiles can compress
@@ -189,7 +194,7 @@ not tied to a slow sender. Set `proxy_request_buffering off` only when the
 application deliberately accepts a streaming upload and the loss of retry
 ability after forwarding begins.
 
-The generator's WebSocket, response-streaming, proxy-cache, and rate-limit
+The renderer's WebSocket, response-streaming, proxy-cache, and rate-limit
 switches apply to the generated proxy `location /` or server. If only one URL
 needs a behavior, split the configuration into locations and move that setting
 there after reviewing the location precedence rules.
