@@ -108,12 +108,12 @@ when reproducibility matters, then refresh it through a reviewed update. A
 permanent digest misses fixes; a floating tag changes silently.
 
 Tag images with the source commit and release version. The selected release is
-`ghcr.io/risan/nginx-config:2.0.0`. A `sha-<commit>` tag is traceable to a
+`ghcr.io/risan/nginx-config:2.0.1`. A `sha-<commit>` tag is traceable to a
 source commit but remains a mutable registry tag; only a digest reference is
 immutable:
 
 ~~~bash
-docker pull ghcr.io/risan/nginx-config:2.0.0
+docker pull ghcr.io/risan/nginx-config:2.0.1
 docker pull ghcr.io/risan/nginx-config@sha256:<published-digest>
 ~~~
 
@@ -153,8 +153,8 @@ A release handoff is:
 ~~~bash
 git switch main
 git pull --ff-only
-git tag -a v2.0.0 -m "Release v2.0.0"
-git push origin v2.0.0
+git tag -a v2.0.1 -m "Release v2.0.1"
+git push origin v2.0.1
 ~~~
 
 Review the generated image, digest, labels, health check, package visibility,
@@ -163,7 +163,7 @@ and manifest platforms after the workflow finishes. The release workflow builds
 inspect, not the earlier local single-platform build. For example:
 
 ~~~bash
-docker buildx imagetools inspect ghcr.io/risan/nginx-config:2.0.0
+docker buildx imagetools inspect ghcr.io/risan/nginx-config:2.0.1
 docker pull ghcr.io/risan/nginx-config@sha256:<published-digest>
 docker image inspect ghcr.io/risan/nginx-config@sha256:<published-digest> \
   --format '{{json .Config.Labels}}'

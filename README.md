@@ -103,7 +103,7 @@ move `latest`, major, or minor aliases. This checkout does not publish
 automatically. The selected release image is:
 
 ```bash
-docker pull ghcr.io/risan/nginx-config:2.0.0
+docker pull ghcr.io/risan/nginx-config:2.0.1
 # Use the digest recorded after publishing when an immutable reference is needed.
 docker pull ghcr.io/risan/nginx-config@sha256:<published-digest>
 ```

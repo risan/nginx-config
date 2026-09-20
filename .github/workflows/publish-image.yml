@@ -126,16 +126,32 @@ jobs:
 
           # Resolve the pushed multi-architecture index before creating any
           # release aliases. A digest is immutable; tags are traceable names.
-          image_digest="sha256:$(docker buildx imagetools inspect --raw "${image}:${candidate_tag}" | sha256sum | cut -d' ' -f1)"
+          index_file="$(mktemp)"
+          trap 'rm -f "$index_file"' EXIT
+          docker buildx imagetools inspect --raw "${image}:${candidate_tag}" > "$index_file"
+          image_digest="sha256:$(sha256sum "$index_file" | cut -d' ' -f1)"
           echo "candidate=${image}@${image_digest}"
           docker buildx imagetools inspect "${image}@${image_digest}"
 
-          # Pull and exercise both published platforms by the same digest. The
-          # arm64 check runs through QEMU and is intentionally limited to the
-          # image health/read-only smoke; the amd64 job already ran all suites.
+          # Docker's classic image store cannot pull two platforms from the
+          # same multi-architecture index digest. Pull each child manifest by
+          # its own digest, while promoting the original index digest below.
           for platform in linux/amd64 linux/arm64; do
-            docker pull --platform "${platform}" "${image}@${image_digest}"
-            DOCKER_PLATFORM="${platform}" sh scripts/smoke-image.sh "${image}@${image_digest}"
+            architecture="${platform#*/}"
+            platform_manifests="$(jq -c --arg architecture "$architecture" '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $architecture)]' "$index_file")"
+            platform_count="$(printf '%s' "$platform_manifests" | jq -r 'length')"
+            if [ "$platform_count" -ne 1 ]; then
+              echo "expected exactly one ${platform} child manifest, found ${platform_count}" >&2
+              exit 1
+            fi
+            platform_digest="$(printf '%s' "$platform_manifests" | jq -r '.[0].digest')"
+            if [[ ! "$platform_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "invalid ${platform} child manifest digest: ${platform_digest}" >&2
+              exit 1
+            fi
+            echo "platform=${platform} digest=${platform_digest}"
+            docker pull --platform "${platform}" "${image}@${platform_digest}"
+            DOCKER_PLATFORM="${platform}" sh scripts/smoke-image.sh "${image}@${platform_digest}"
           done
 
           # Promote only the verified digest. Stable aliases move only for an
