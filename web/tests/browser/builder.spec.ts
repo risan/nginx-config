@@ -66,6 +66,59 @@ test.describe('builder', () => {
     await expect(page.locator('.code-line.is-changed')).toHaveCount(0)
   })
 
+  test('preview wraps long lines by default and scrolls when wrap is off', async ({ page }) => {
+    await page.goto('/')
+    const block = page.locator('[data-testid="config-code"]:visible')
+    const overflow = () =>
+      block.evaluate((el) => {
+        const panel = el.parentElement as HTMLElement
+        return panel.scrollWidth - panel.clientWidth
+      })
+    const lineCount = await block.locator('.code-line').count()
+
+    expect(await overflow()).toBeLessThanOrEqual(0)
+
+    await page.getByRole('button', { name: 'Wrap' }).click()
+
+    await expect(page.getByRole('button', { name: 'Wrap' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(await overflow()).toBeGreaterThan(0)
+    await expect(block.locator('.code-line')).toHaveCount(lineCount)
+  })
+
+  test('number fields show five digits in full', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('radio', { name: 'Reverse proxy' }).click()
+    await page
+      .getByRole('button', { name: /^Show advanced/ })
+      .last()
+      .click()
+    const inputs = page.locator('input[type="number"]:visible')
+    const count = await inputs.count()
+    expect(count).toBeGreaterThan(3)
+
+    for (let i = 0; i < count; i++) {
+      await inputs.nth(i).fill('65535')
+      const clipped = await inputs.nth(i).evaluate((el) => el.scrollWidth > el.clientWidth)
+      expect(clipped, `number input ${i}`).toBe(false)
+    }
+  })
+
+  test('the Advanced section does not repeat an Advanced badge on each row', async ({ page }) => {
+    await page.goto('/')
+    await page
+      .getByRole('button', { name: /^Show advanced/ })
+      .last()
+      .click()
+
+    await expect(page.locator('#section-advanced #row-httpPort')).toBeVisible()
+    await expect(
+      page.locator('#section-advanced [id^="row-"]').getByText('Advanced', { exact: true }),
+    ).toHaveCount(0)
+  })
+
   test('deploy and warnings tabs show real content', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('tab', { name: 'Deploy' }).click()

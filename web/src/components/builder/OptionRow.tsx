@@ -111,7 +111,7 @@ function Control({ def, options, error, onChange }: OptionRowProps) {
             id={id}
             type="number"
             inputMode="numeric"
-            className="h-8 w-28 font-mono text-[12.5px] shadow-none"
+            className="h-8 w-32 font-mono text-[12.5px] shadow-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             min={def.min}
             max={def.max}
             value={String(value ?? '')}
@@ -211,7 +211,7 @@ export function OptionRow(props: OptionRowProps) {
             Experimental
           </Badge>
         ) : null}
-        {def.advanced === true ? (
+        {def.advanced === true && def.group !== 'advanced' ? (
           <Badge
             variant="outline"
             className="h-4 rounded-sm px-1 text-[10px] text-muted-foreground"

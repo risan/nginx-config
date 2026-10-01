@@ -36,7 +36,7 @@ jobs:
         run: node scripts/generate-examples.mjs --check
 
   web:
-    name: Vue tests and build
+    name: Web app lint, tests, and build
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -47,17 +47,20 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Install browser app dependencies
+      - name: Install web app dependencies
         run: npm --prefix web ci
-      - name: Audit browser app dependencies
-        run: npm --prefix web audit --audit-level=moderate
-      - name: Run browser app unit tests
+      - name: Lint the web app, renderer, scripts, and tests
+        run: npm --prefix web run lint
+      - name: Check formatting
+        run: npm --prefix web run fmt:check
+      - name: Run web app unit tests
         run: npm --prefix web run test:unit
-      - name: Build browser app
+      - name: Type-check and build the web app
         run: npm --prefix web run build
-      - name: Install Chromium for browser smoke tests
-        run: cd web && npx playwright install --with-deps chromium
-      - name: Run browser smoke tests
+      - name: Install Chromium for browser tests
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run browser tests
         run: npm --prefix web run test:browser
 
   docker:

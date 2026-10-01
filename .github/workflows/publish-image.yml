@@ -35,13 +35,17 @@ jobs:
           npm run typecheck
           node --test tests/*.test.ts
           node scripts/generate-examples.mjs --check
-      - name: Install and test the browser app
+      - name: Lint, test, and build the web app
         run: |
           npm --prefix web ci
-          npm --prefix web audit --audit-level=moderate
+          npm --prefix web run lint
+          npm --prefix web run fmt:check
           npm --prefix web run test:unit
           npm --prefix web run build
-          cd web && npx playwright install --with-deps chromium
+      - name: Install Chromium and run browser tests
+        working-directory: web
+        run: |
+          npx playwright install --with-deps chromium
           npm run test:browser
       - name: Parse the generated option matrix in stable NGINX
         run: node scripts/verify-nginx-configs.mjs

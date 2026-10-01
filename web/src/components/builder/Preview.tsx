@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Copy, Download, Info, Link2 } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Download, Info, Link2, WrapText } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -57,29 +57,55 @@ function changedLineIndexes(previous: string[], next: string[]): Set<number> {
   return changed
 }
 
-function CodeView({ lines, changed }: { lines: string[]; changed: Set<number> }) {
+function CodeView({
+  lines,
+  changed,
+  wrap,
+}: {
+  lines: string[]
+  changed: Set<number>
+  wrap: boolean
+}) {
   const gutterWidth = `${String(lines.length).length + 1}ch`
 
   return (
-    <div className="py-2 font-mono text-[12.5px] leading-[1.55]" data-testid="config-code">
-      {lines.map((line, index) => (
-        <div key={index} className={cn('code-line', changed.has(index) && 'is-changed')}>
-          <span
-            aria-hidden="true"
-            className="shrink-0 pr-3 pl-3 text-right text-gutter select-none"
-            style={{ minWidth: `calc(${gutterWidth} + 1.5rem)` }}
-          >
-            {index + 1}
-          </span>
-          <span className="pr-4 whitespace-pre">
-            {tokenizeLine(line).map((token, i) => (
-              <span key={i} className={TOKEN_CLASS[token.type]}>
-                {token.text}
-              </span>
-            ))}
-          </span>
-        </div>
-      ))}
+    <div
+      className={cn('py-2 font-mono text-[12.5px] leading-[1.55]', !wrap && 'w-max min-w-full')}
+      data-testid="config-code"
+      data-wrap={wrap}
+    >
+      {lines.map((line, index) => {
+        // Wrapped lines hang under the code, two columns past its own indentation.
+        const indent = line.length - line.trimStart().length
+        const hanging = wrap
+          ? { paddingLeft: `${indent + 2}ch`, textIndent: `-${indent + 2}ch` }
+          : undefined
+
+        return (
+          <div key={index} className={cn('code-line', changed.has(index) && 'is-changed')}>
+            <span
+              aria-hidden="true"
+              className="shrink-0 pr-3 pl-3 text-right text-gutter select-none"
+              style={{ minWidth: `calc(${gutterWidth} + 1.5rem)` }}
+            >
+              {index + 1}
+            </span>
+            <span
+              className={cn(
+                'pr-4',
+                wrap ? 'min-w-0 flex-1 break-words whitespace-pre-wrap' : 'whitespace-pre',
+              )}
+              style={hanging}
+            >
+              {tokenizeLine(line).map((token, i) => (
+                <span key={i} className={TOKEN_CLASS[token.type]}>
+                  {token.text}
+                </span>
+              ))}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -118,6 +144,7 @@ export function Preview(props: PreviewProps) {
   const lines = useMemo(() => config.replace(/\n$/, '').split('\n'), [config])
   const changed = useChangedLines(lines, markChanges)
   const [copied, setCopied] = useState(false)
+  const [wrap, setWrap] = useState(true)
   const blocked = errorCount > 0
 
   function copy() {
@@ -134,6 +161,16 @@ export function Preview(props: PreviewProps) {
           {lines.length} lines
         </span>
         <div className="ml-auto flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={wrap}
+            className={cn('text-muted-foreground', wrap && 'bg-muted text-foreground')}
+            onClick={() => setWrap(!wrap)}
+          >
+            <WrapText /> Wrap
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -208,7 +245,7 @@ export function Preview(props: PreviewProps) {
           className="min-h-0 flex-1 overflow-auto bg-code-bg"
           tabIndex={0}
         >
-          <CodeView lines={lines} changed={changed} />
+          <CodeView lines={lines} changed={changed} wrap={wrap} />
         </TabsContent>
         <TabsContent value="deploy" className="min-h-0 flex-1 overflow-auto p-3">
           <ol className="flex flex-col gap-3">
