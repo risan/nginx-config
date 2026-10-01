@@ -45,3 +45,14 @@ for (const scenario of scenarios) {
     }
   }
 }
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`mobile sheet open ${scheme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.emulateMedia({ colorScheme: scheme })
+    await page.goto(`/${encodeShareHash(acmeProxy)}`)
+    await page.getByRole('button', { name: /Preview nginx\.conf/ }).click()
+    await page.waitForTimeout(800)
+    await page.screenshot({ path: `test-results/screens/mobile-sheet-open-${scheme}.png` })
+  })
+}

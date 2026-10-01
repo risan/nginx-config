@@ -1,6 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
-import { OPTIONS } from '../../src/lib/engine.ts'
 import { encodeShareHash, visibleOptions } from '../../src/lib/state.ts'
 import { allStates } from '../option-states.ts'
 
@@ -14,48 +13,88 @@ async function expandAdvanced(page: Page) {
   }
 }
 
-// Each option is exercised once with a real interaction that proves the control is wired.
-async function exercise(page: Page, kind: string, key: string) {
+const previewText = (page: Page) => page.locator('[data-testid="config-code"]:visible').innerText()
+
+// Flips one toggle or select, proves the builder reacted (the preview changed, or the new
+// combination is invalid and the error banner says so), then puts the choice back and
+// proves the preview returns to what it was.
+async function proveControlChangesOutput(page: Page, kind: string, key: string) {
   const row = page.locator(`#row-${key}`)
-  const control = row.locator(CONTROL).first()
-  switch (kind) {
-    case 'toggle': {
-      const before = await control.getAttribute('aria-checked')
-      await control.click()
-      await expect(control).not.toHaveAttribute('aria-checked', before ?? '')
-      break
+  await expect(row, `row ${key} should be visible before it is changed`).toBeVisible()
+  const before = await previewText(page)
+  const banner = page.getByText(/Fix \d+ errors? to update/)
+
+  let undo: () => Promise<void>
+  if (kind === 'toggle') {
+    const control = row.getByRole('switch')
+    await control.click()
+    undo = () => control.click()
+  } else {
+    const radios = row.getByRole('radio')
+    await expect(radios.or(row.getByRole('combobox')).first()).toBeVisible()
+    if ((await radios.count()) > 0) {
+      const original = row.locator('[role="radio"][data-state="on"]')
+      const originalName = await original.innerText()
+      await radios.locator('xpath=self::*[@data-state="off"]').first().click()
+      undo = () => row.getByRole('radio', { name: originalName, exact: true }).click()
+    } else {
+      const combo = row.getByRole('combobox')
+      const originalName = (await combo.innerText()).trim()
+      await combo.click()
+      await page.getByRole('option').filter({ hasNotText: originalName }).first().click()
+      undo = async () => {
+        await combo.click()
+        await page.getByRole('option', { name: originalName, exact: true }).click()
+      }
     }
-    case 'text':
-    case 'number': {
-      await control.fill(kind === 'number' ? '7' : 'x')
-      await expect(control).toHaveValue(kind === 'number' ? '7' : 'x')
-      break
-    }
-    case 'list':
-    case 'upstreams': {
-      const inputs = row.locator('input[type="text"], input:not([type])')
-      const before = await inputs.count()
-      await row.getByRole('button', { name: /^Add/ }).click()
-      await expect(inputs).toHaveCount(before + 1)
-      break
-    }
-    default:
-      await expect(control).toBeVisible()
   }
+
+  await expect
+    .poll(async () => (await previewText(page)) !== before || (await banner.isVisible()), {
+      message: `changing ${key} did not change the preview or report an error`,
+      timeout: 3000,
+    })
+    .toBe(true)
+
+  await undo()
+  await expect
+    .poll(() => previewText(page), { message: `undoing ${key} did not restore the preview` })
+    .toBe(before)
+}
+
+async function editControl(page: Page, kind: string, key: string) {
+  const row = page.locator(`#row-${key}`)
+  const control: Locator = row.locator(CONTROL).first()
+  if (kind === 'text' || kind === 'number') {
+    const value = kind === 'number' ? '7' : 'x'
+    await control.fill(value)
+    await expect(control).toHaveValue(value)
+
+    return
+  }
+
+  const inputs = row.locator('input[type="text"], input:not([type])')
+  const count = await inputs.count()
+  await row.getByRole('button', { name: /^Add/ }).click()
+  await expect(inputs).toHaveCount(count + 1)
 }
 
 test.describe('every option renders as a working control', () => {
-  test.describe.configure({ mode: 'parallel' })
+  test.describe.configure({ mode: 'parallel', timeout: 120_000 })
+  test.use({ actionTimeout: 5000 })
 
   for (const state of allStates()) {
     test(state.name, async ({ page }) => {
       const errors: string[] = []
-      page.on('pageerror', (error) => {
-        console.log('PAGEERR', error.message)
-        errors.push(error.message)
+      page.on('pageerror', (error) => errors.push(error.message))
+      page.on('console', (message) => {
+        if (message.type() === 'error') {
+          errors.push(message.text())
+        }
       })
       await page.goto(`/${encodeShareHash(state.options)}`)
       await expect(page.locator('[data-testid="config-code"]:visible')).toBeVisible()
+      await expect(page.getByText(/Fix \d+ errors? to update/)).toHaveCount(0)
       await expandAdvanced(page)
 
       const visible = visibleOptions(state.options)
@@ -66,25 +105,18 @@ test.describe('every option renders as a working control', () => {
         await expect(row.locator(CONTROL).first()).toBeVisible()
       }
 
-      // Editing text, numbers, and lists never hides another row. A toggle can, so only one
-      // toggle is flipped, last.
-      const edits = visible.filter((def) =>
-        ['text', 'number', 'list', 'upstreams'].includes(def.kind),
-      )
-      for (const def of edits) {
-        await exercise(page, def.kind, def.key)
+      // Selects and toggles first, one at a time with an undo, since either can hide rows.
+      for (const def of visible.filter((d) => d.kind === 'toggle' || d.kind === 'select')) {
+        await proveControlChangesOutput(page, def.kind, def.key)
       }
-      const toggle = visible.find((def) => def.kind === 'toggle')
-      if (toggle !== undefined) {
-        await exercise(page, 'toggle', toggle.key)
+
+      // Text, numbers, and lists never hide another row, so they can follow in one pass.
+      for (const def of visible.filter((d) =>
+        ['text', 'number', 'list', 'upstreams'].includes(d.kind),
+      )) {
+        await editControl(page, def.kind, def.key)
       }
       expect(errors).toEqual([])
     })
   }
-
-  test('the states cover every option in the schema', () => {
-    const covered = new Set(allStates().flatMap((s) => visibleOptions(s.options).map((d) => d.key)))
-
-    expect(OPTIONS.filter((def) => !covered.has(def.key)).map((def) => def.key)).toEqual([])
-  })
 })

@@ -23,8 +23,22 @@ export default defineConfig({
         "font-src 'self' data:",
         "connect-src 'self'",
       ],
-      // React and Shiki render style attributes, which hashes cannot cover.
-      styleDirective: { resources: ["'self'", "'unsafe-inline'"] },
+      // Style elements stay hashed (Astro adds the hashes). Only style attributes, which
+      // SSR output from React and Shiki contains and hashes cannot cover, are allowed inline.
+      styleDirective: {
+        // <style> elements that sonner and Radix Select inject at runtime. Their text is fixed
+        // per package version, so a dependency upgrade that changes it shows up as a CSP
+        // console error in the browser tests, which print the new hash.
+        hashes: [
+          { hash: 'sha256-StEaX+se6YS7pqjzrzMIA0KaX9zF/8zAhvQXZAe5epY=', kind: 'element' },
+          { hash: 'sha256-441zG27rExd4/il+NvIqyL8zFx5XmyNQtE381kSkUJk=', kind: 'element' },
+          { hash: 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo=', kind: 'element' },
+        ],
+        resources: [
+          { resource: "'self'", kind: 'element' },
+          { resource: "'unsafe-inline'", kind: 'attribute' },
+        ],
+      },
       scriptDirective: { hashes: [themeScriptHash] },
     },
   },
@@ -32,7 +46,7 @@ export default defineConfig({
     // Astro 7 defaults to the Satteri processor; unified keeps the rehype plugin API.
     processor: unified({ rehypePlugins: [rehypeDocLinks] }),
     shikiConfig: {
-      themes: { light: 'github-light', dark: 'github-dark' },
+      themes: { light: 'github-light-high-contrast', dark: 'github-dark-high-contrast' },
       defaultColor: false,
     },
   },

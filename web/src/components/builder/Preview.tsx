@@ -16,11 +16,11 @@ export interface PreviewProps {
   notices: Warnings
   errorCount: number
   markChanges: boolean
-  errorFields: { key: string; label: string }[]
+  errorFields: { key: string; index?: number; label: string }[]
   onCopy(text: string): void
   onDownload(): void
   onShare(): void
-  onFocusField(key: string): void
+  onFocusField(key: string, index?: number): void
   className?: string
 }
 
@@ -63,7 +63,7 @@ function CodeView({
   wrap,
 }: {
   lines: string[]
-  changed: Set<number>
+  changed: ReadonlySet<number>
   wrap: boolean
 }) {
   const gutterWidth = `${String(lines.length).length + 1}ch`
@@ -110,28 +110,29 @@ function CodeView({
   )
 }
 
-function useChangedLines(lines: string[], enabled: boolean): Set<number> {
+const NO_LINES: ReadonlySet<number> = new Set()
+
+function useChangedLines(lines: string[], enabled: boolean): ReadonlySet<number> {
   const previous = useRef<string[] | null>(null)
-  const [changed, setChanged] = useState<Set<number>>(new Set())
+  const [changed, setChanged] = useState<ReadonlySet<number>>(NO_LINES)
 
   useEffect(() => {
     const before = previous.current
     previous.current = lines
-    if (
-      !enabled ||
-      before === null ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ) {
+    const animate =
+      enabled && before !== null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const marked = animate ? changedLineIndexes(before, lines) : NO_LINES
+    // A rewrite of most of the file is noise, not a marker. Always clear the old marks,
+    // because their timer was cancelled when this effect re-ran.
+    const useful = marked.size > 0 && marked.size <= lines.length * 0.6
+
+    // oxlint-disable-next-line react/set-state-in-effect
+    setChanged(useful ? marked : NO_LINES)
+    if (!useful) {
       return
     }
 
-    const marked = changedLineIndexes(before, lines)
-    if (marked.size === 0 || marked.size > lines.length * 0.6) {
-      return
-    }
-
-    setChanged(marked)
-    const timer = window.setTimeout(() => setChanged(new Set()), CHANGE_MARKER_MS)
+    const timer = window.setTimeout(() => setChanged(NO_LINES), CHANGE_MARKER_MS)
 
     return () => window.clearTimeout(timer)
   }, [lines, enabled])
@@ -156,11 +157,11 @@ export function Preview(props: PreviewProps) {
   return (
     <div className={cn('flex min-h-0 flex-col rounded-md border border-border bg-card', className)}>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-        <span className="font-mono text-[12.5px] font-medium">nginx.conf</span>
+        <span className="min-w-0 truncate font-mono text-[12.5px] font-medium">nginx.conf</span>
         <span className="text-xs text-muted-foreground" data-testid="line-count">
           {lines.length} lines
         </span>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1 max-sm:[&_button]:px-2">
           <Button
             type="button"
             variant="ghost"
@@ -169,7 +170,7 @@ export function Preview(props: PreviewProps) {
             className={cn('text-muted-foreground', wrap && 'bg-muted text-foreground')}
             onClick={() => setWrap(!wrap)}
           >
-            <WrapText /> Wrap
+            <WrapText /> <span className="max-sm:sr-only">Wrap</span>
           </Button>
           <Button
             type="button"
@@ -179,7 +180,7 @@ export function Preview(props: PreviewProps) {
             disabled={blocked}
             onClick={copy}
           >
-            {copied ? <Check /> : <Copy />} Copy
+            {copied ? <Check /> : <Copy />} <span className="max-sm:sr-only">Copy</span>
           </Button>
           <Button
             type="button"
@@ -189,7 +190,7 @@ export function Preview(props: PreviewProps) {
             disabled={blocked}
             onClick={props.onDownload}
           >
-            <Download /> Download
+            <Download /> <span className="max-sm:sr-only">Download</span>
           </Button>
           <Button
             type="button"
@@ -198,7 +199,7 @@ export function Preview(props: PreviewProps) {
             className="shadow-none"
             onClick={props.onShare}
           >
-            <Link2 /> Share
+            <Link2 /> <span className="max-sm:sr-only">Share</span>
           </Button>
         </div>
       </div>
@@ -212,12 +213,12 @@ export function Preview(props: PreviewProps) {
           </span>{' '}
           Showing the last valid config.{' '}
           {errorFields.map((field, index) => (
-            <span key={field.key}>
+            <span key={`${field.key}-${field.index ?? ''}`}>
               {index > 0 ? ', ' : ''}
               <button
                 type="button"
                 className="underline underline-offset-2"
-                onClick={() => props.onFocusField(field.key)}
+                onClick={() => props.onFocusField(field.key, field.index)}
               >
                 {field.label}
               </button>

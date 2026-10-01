@@ -27,7 +27,15 @@ import {
 } from '@/lib/engine.ts'
 import { builderReducer, initialBuilderState } from '@/lib/builder-state'
 import { useIsDark } from '@/lib/theme'
-import { decodeShareHash, encodeShareHash, groupLabel, visibleOptions } from '@/lib/state'
+import { groupErrors } from '@/lib/errors'
+import {
+  decodeShareHash,
+  encodeShareHash,
+  groupLabel,
+  isShareHashTooLong,
+  MAX_HASH_LENGTH,
+  visibleOptions,
+} from '@/lib/state'
 import { cn } from '@/lib/utils'
 
 import { OptionRow } from './OptionRow'
@@ -102,7 +110,7 @@ export default function Builder() {
     const restored = decodeShareHash(window.location.hash)
     if (restored !== null) {
       // oxlint-disable-next-line react/set-state-in-effect
-      dispatch({ type: 'restore', options: restored })
+      dispatch({ type: 'restore', options: restored.options, edited: restored.edited })
     }
   }, [])
 
@@ -116,17 +124,30 @@ export default function Builder() {
     visible: visibleOptions(options, group.id),
   })).filter((section) => section.visible.length > 0)
 
-  const errorFields = Object.keys(errors).map((key) => ({
-    key,
-    label: OPTIONS.find((def) => def.key === key)?.label ?? key,
-  }))
+  const grouped = groupErrors(errors)
+  const visibleKeys = new Set(sections.flatMap((section) => section.visible.map((def) => def.key)))
+  const errorFields = Object.keys(errors).map((key) => {
+    const match = /^([A-Za-z0-9_]+)(?:\.(\d+))?/.exec(key)
+    const field = match?.[1] ?? key
+    const index = match?.[2] === undefined ? undefined : Number(match[2])
+    const label = OPTIONS.find((def) => def.key === field)?.label ?? field
+
+    return { key: field, index, label: index === undefined ? label : `${label} ${index + 1}` }
+  })
+  // Errors that point at a field the form does not show, such as a conflict between two
+  // options. They get a message of their own so the builder is never blocked silently.
+  const orphanErrors = [...grouped]
+    .filter(([field]) => !visibleKeys.has(field))
+    .flatMap(([field, entry]) =>
+      [entry.own, ...Object.values(entry.items)].map((message) => ({ field, message })),
+    )
 
   function setValue(key: string, value: Options[string]) {
     // A section that an error opened must stay open after the edit clears that error,
     // so fields do not vanish under the cursor.
     const opened = sections
       .filter((section) =>
-        section.visible.some((def) => def.advanced === true && errors[def.key] !== undefined),
+        section.visible.some((def) => def.advanced === true && grouped.has(def.key)),
       )
       .map((section) => section.id)
     const editedGroup = OPTIONS.find((def) => def.key === key && def.advanced === true)?.group
@@ -146,22 +167,24 @@ export default function Builder() {
   }
 
   const focusField = useCallback(
-    (key: string) => {
+    (key: string, index?: number) => {
       const def = OPTIONS.find((candidate) => candidate.key === key)
-      if (def === undefined) {
-        return
-      }
-
       setSheetOpen(false)
-      setAdvancedOpen((current) => ({ ...current, [def.group]: true }))
+      if (def !== undefined) {
+        setAdvancedOpen((current) => ({ ...current, [def.group]: true }))
+      }
       window.setTimeout(() => {
         const row = document.getElementById(`row-${key}`)
-        row?.scrollIntoView({ block: 'center' })
-        row
-          ?.querySelector<HTMLElement>(
-            '[data-control] :is(input, button, [role="radio"], [role="switch"])',
-          )
-          ?.focus()
+        const target =
+          row === null
+            ? document.getElementById('form-errors')
+            : index === undefined
+              ? row.querySelector<HTMLElement>(
+                  '[data-control] :is(input, button, [role="radio"], [role="switch"])',
+                )
+              : row.querySelector<HTMLElement>(`[data-item="${index}"] input`)
+        target?.scrollIntoView({ block: 'center' })
+        target?.focus()
       }, 50)
     },
     [setSheetOpen],
@@ -186,7 +209,15 @@ export default function Builder() {
   }
 
   async function share() {
-    const hash = encodeShareHash(options)
+    const hash = encodeShareHash(options, state.edited)
+    if (isShareHashTooLong(hash)) {
+      toast.error(
+        `This configuration is too large for a share link (${hash.length.toLocaleString('en-US')} of ${MAX_HASH_LENGTH.toLocaleString('en-US')} characters). Shorten long values such as the Content-Security-Policy or path lists, or download the config instead.`,
+      )
+
+      return
+    }
+
     window.history.replaceState(null, '', hash)
     await copyText(`${window.location.origin}${window.location.pathname}${hash}`)
   }
@@ -307,10 +338,25 @@ export default function Builder() {
             onSubmit={(event) => event.preventDefault()}
             noValidate
           >
+            {orphanErrors.length === 0 ? null : (
+              <div
+                id="form-errors"
+                tabIndex={-1}
+                role="alert"
+                className="rounded-md border border-destructive/60 bg-card px-4 py-2.5 text-[13px]"
+              >
+                <p className="font-medium text-destructive">These options conflict</p>
+                <ul className="mt-1 list-disc pl-4 text-xs">
+                  {orphanErrors.map((item, index) => (
+                    <li key={index}>{item.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {sections.map((section) => {
               const basic = section.visible.filter((def) => def.advanced !== true)
               const advanced = section.visible.filter((def) => def.advanced === true)
-              const hasAdvancedError = advanced.some((def) => errors[def.key] !== undefined)
+              const hasAdvancedError = advanced.some((def) => grouped.has(def.key))
               const open = (advancedOpen[section.id] ?? basic.length === 0) || hasAdvancedError
 
               return (
@@ -332,7 +378,7 @@ export default function Builder() {
                         key={def.key}
                         def={def}
                         options={options}
-                        error={errors[def.key]}
+                        errors={grouped.get(def.key)}
                         onChange={setValue}
                       />
                     ))}

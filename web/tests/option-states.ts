@@ -27,6 +27,7 @@ const EVERYTHING_ON: Record<string, Options[string]> = {
   websocketPath: '/ws/',
   streamingPath: '/events/',
   upstreamTls: true,
+  upstreamTlsName: 'app.internal',
   wwwRedirect: 'to-apex',
   statusEndpoint: true,
   immutablePaths: ['/assets/'],

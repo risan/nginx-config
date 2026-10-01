@@ -11,6 +11,15 @@ describe('real option schema', () => {
     expect(OPTIONS.filter((def) => !covered.has(def.key)).map((def) => def.key)).toEqual([])
   })
 
+  it('every fixture is a valid configuration', () => {
+    for (const state of allStates()) {
+      const result = validateOptions(state.options)
+
+      expect(result.errors, state.name).toEqual({})
+      expect(result.valid, state.name).toBe(true)
+    }
+  })
+
   it('every option has a label, help and why text, and select options have choices', () => {
     for (const def of OPTIONS) {
       expect(def.label, def.key).not.toBe('')

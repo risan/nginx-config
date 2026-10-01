@@ -19,7 +19,7 @@ const { Content } = await render(doc.entry)
   description={doc.description}
   path={`/docs/${doc.slug}/`}
 >
-  <div class="mx-auto grid max-w-5xl gap-8 px-4 py-8 lg:grid-cols-[12rem_minmax(0,1fr)]">
+  <main class="mx-auto grid max-w-5xl gap-8 px-4 py-8 lg:grid-cols-[12rem_minmax(0,1fr)]">
     <nav aria-label="Guides" class="text-[13px] lg:sticky lg:top-16 lg:h-fit">
       <a href="/docs/" class="font-medium">
         Guides
@@ -44,5 +44,5 @@ const { Content } = await render(doc.entry)
     <article class="docs-prose prose max-w-none prose-neutral dark:prose-invert">
       <Content />
     </article>
-  </div>
+  </main>
 </Layout>

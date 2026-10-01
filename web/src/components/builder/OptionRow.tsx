@@ -14,13 +14,14 @@ import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { OptionDef, Options, Upstream } from '@/lib/engine.ts'
+import type { FieldErrors } from '@/lib/errors'
 
 import { StringListEditor, UpstreamEditor } from './ListEditors'
 
 interface OptionRowProps {
   def: OptionDef
   options: Options
-  error?: string
+  errors?: FieldErrors
   onChange(key: string, value: Options[string]): void
 }
 
@@ -29,7 +30,9 @@ interface OptionRowProps {
 const SEGMENT_MAX_CHOICES = 4
 const SEGMENT_MAX_CHARS = 34
 
-function Control({ def, options, error, onChange }: OptionRowProps) {
+function Control({ def, options, errors, onChange }: OptionRowProps) {
+  const error = errors?.own
+  const itemErrors = errors?.items ?? {}
   const value = options[def.key]
   const id = `opt-${def.key}`
   const errorId = error === undefined ? undefined : `err-${def.key}`
@@ -134,8 +137,9 @@ function Control({ def, options, error, onChange }: OptionRowProps) {
           label={def.label}
           value={Array.isArray(value) ? (value as string[]) : []}
           placeholder={def.placeholder}
-          invalid={invalid}
-          errorId={errorId}
+          ownInvalid={invalid}
+          ownErrorId={errorId}
+          itemErrors={itemErrors}
           onChange={(next) => onChange(def.key, next)}
         />
       )
@@ -146,8 +150,9 @@ function Control({ def, options, error, onChange }: OptionRowProps) {
           label={def.label}
           value={Array.isArray(value) ? (value as Upstream[]) : []}
           placeholder={def.placeholder}
-          invalid={invalid}
-          errorId={errorId}
+          ownInvalid={invalid}
+          ownErrorId={errorId}
+          itemErrors={itemErrors}
           onChange={(next) => onChange(def.key, next)}
         />
       )
@@ -169,7 +174,8 @@ function Control({ def, options, error, onChange }: OptionRowProps) {
 }
 
 export function OptionRow(props: OptionRowProps) {
-  const { def, options, error } = props
+  const { def, options } = props
+  const error = props.errors?.own
   const selected = def.choices?.find((choice) => choice.value === options[def.key])
 
   return (

@@ -10,8 +10,9 @@ interface EditorProps<T> {
   label: string
   value: T[]
   placeholder?: string
-  invalid: boolean
-  errorId?: string
+  ownInvalid: boolean
+  ownErrorId?: string
+  itemErrors: Record<number, string>
   onChange(next: T[]): void
 }
 
@@ -40,37 +41,58 @@ function RemoveButton({
   )
 }
 
+function ItemError({ id, message }: { id: string; message?: string }) {
+  if (message === undefined) {
+    return null
+  }
+
+  return (
+    <p id={id} role="alert" className="mt-1 text-xs font-medium text-destructive">
+      {message}
+    </p>
+  )
+}
+
 export function StringListEditor({
   id,
   label,
   value,
   placeholder,
-  invalid,
-  errorId,
+  ownInvalid,
+  ownErrorId,
+  itemErrors,
   onChange,
 }: EditorProps<string>) {
   return (
     <div className="flex flex-col gap-2" data-field={id}>
-      {value.map((item, index) => (
-        <div key={index} className="flex items-center gap-1">
-          <Input
-            id={index === 0 ? `opt-${id}` : undefined}
-            className={codeInput}
-            value={item}
-            placeholder={placeholder}
-            aria-label={`${label} ${index + 1}`}
-            aria-invalid={invalid || undefined}
-            aria-describedby={errorId}
-            onChange={(event) =>
-              onChange(value.map((v, i) => (i === index ? event.target.value : v)))
-            }
-          />
-          <RemoveButton
-            label={`Remove ${label} ${index + 1}`}
-            onClick={() => onChange(value.filter((_, i) => i !== index))}
-          />
-        </div>
-      ))}
+      {value.map((item, index) => {
+        const errorId = `err-${id}-${index}`
+        const message = itemErrors[index]
+
+        return (
+          <div key={index} data-item={index}>
+            <div className="flex items-center gap-1">
+              <Input
+                id={index === 0 ? `opt-${id}` : undefined}
+                className={codeInput}
+                value={item}
+                placeholder={placeholder}
+                aria-label={`${label} ${index + 1}`}
+                aria-invalid={message !== undefined || ownInvalid || undefined}
+                aria-describedby={message === undefined ? ownErrorId : errorId}
+                onChange={(event) =>
+                  onChange(value.map((v, i) => (i === index ? event.target.value : v)))
+                }
+              />
+              <RemoveButton
+                label={`Remove ${label} ${index + 1}`}
+                onClick={() => onChange(value.filter((_, i) => i !== index))}
+              />
+            </div>
+            <ItemError id={errorId} message={message} />
+          </div>
+        )
+      })}
       <Button
         type="button"
         variant="outline"
@@ -91,8 +113,9 @@ export function UpstreamEditor({
   label,
   value,
   placeholder,
-  invalid,
-  errorId,
+  ownInvalid,
+  ownErrorId,
+  itemErrors,
   onChange,
 }: EditorProps<Upstream>) {
   function update(index: number, patch: Partial<Upstream>) {
@@ -101,36 +124,44 @@ export function UpstreamEditor({
 
   return (
     <div className="flex flex-col gap-2" data-field={id}>
-      {value.map((item, index) => (
-        <div key={index} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Input
-            id={index === 0 ? `opt-${id}` : undefined}
-            className={codeInput}
-            value={item.address}
-            placeholder={placeholder}
-            aria-label={`${label} ${index + 1} address`}
-            aria-invalid={invalid || undefined}
-            aria-describedby={errorId}
-            onChange={(event) => update(index, { address: event.target.value })}
-          />
-          <div className="flex shrink-0 items-center gap-1">
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <Switch
-                size="sm"
-                checked={item.backup}
-                aria-label={`${label} ${index + 1} is a backup`}
-                onCheckedChange={(checked) => update(index, { backup: checked })}
+      {value.map((item, index) => {
+        const errorId = `err-${id}-${index}`
+        const message = itemErrors[index]
+
+        return (
+          <div key={index} data-item={index}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Input
+                id={index === 0 ? `opt-${id}` : undefined}
+                className={codeInput}
+                value={item.address}
+                placeholder={placeholder}
+                aria-label={`${label} ${index + 1} address`}
+                aria-invalid={message !== undefined || ownInvalid || undefined}
+                aria-describedby={message === undefined ? ownErrorId : errorId}
+                onChange={(event) => update(index, { address: event.target.value })}
               />
-              Backup
-            </label>
-            <RemoveButton
-              label={`Remove ${label} ${index + 1}`}
-              disabled={value.length === 1}
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
-            />
+              <div className="flex shrink-0 items-center gap-1">
+                <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  <Switch
+                    size="sm"
+                    checked={item.backup}
+                    aria-label={`${label} ${index + 1} is a backup`}
+                    onCheckedChange={(checked) => update(index, { backup: checked })}
+                  />
+                  Backup
+                </label>
+                <RemoveButton
+                  label={`Remove ${label} ${index + 1}`}
+                  disabled={value.length === 1}
+                  onClick={() => onChange(value.filter((_, i) => i !== index))}
+                />
+              </div>
+            </div>
+            <ItemError id={errorId} message={message} />
           </div>
-        </div>
-      ))}
+        )
+      })}
       <Button
         type="button"
         variant="outline"
@@ -139,7 +170,7 @@ export function UpstreamEditor({
         aria-label={`Add ${label}`}
         onClick={() => onChange([...value, { address: '', backup: false }])}
       >
-        <Plus /> Add upstream
+        <Plus /> Add
       </Button>
     </div>
   )
