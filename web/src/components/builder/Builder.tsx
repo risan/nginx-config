@@ -38,13 +38,17 @@ const SEGMENT_ITEM =
 
 function Segmented<T extends string>(props: {
   label: string
+  shortLabel: string
   value: T
   items: { id: T; label: string; description: string }[]
   onChange(value: T): void
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="hidden text-xs text-muted-foreground sm:inline">{props.label}</span>
+      <span className="w-14 shrink-0 text-xs text-muted-foreground sm:w-auto">
+        <span className="sm:hidden">{props.shortLabel}</span>
+        <span className="hidden sm:inline">{props.label}</span>
+      </span>
       <ToggleGroup
         type="single"
         variant="outline"
@@ -204,15 +208,17 @@ export default function Builder() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="mx-auto w-full max-w-[1680px]">
-        <div className="sticky top-11 z-20 flex h-12 items-center gap-6 overflow-x-auto border-b border-border bg-background px-4">
+        <div className="z-20 flex flex-col gap-2 border-b border-border bg-background px-4 py-2 sm:sticky sm:top-11 sm:h-12 sm:flex-row sm:items-center sm:gap-6 sm:py-0">
           <Segmented
             label="What are you serving?"
+            shortLabel="Serving"
             value={options.profile}
             items={PROFILES}
             onChange={(profile) => changePreset(profile, options.target)}
           />
           <Segmented
             label="Where does it run?"
+            shortLabel="Runs on"
             value={options.target}
             items={TARGETS}
             onChange={(target) => changePreset(options.profile, target)}
@@ -221,7 +227,7 @@ export default function Builder() {
 
         <nav
           aria-label="Sections"
-          className="sticky top-[92px] z-10 flex gap-1 overflow-x-auto border-b border-border bg-background px-4 py-1.5 xl:hidden"
+          className="z-10 flex flex-wrap gap-x-1 border-b border-border bg-background px-3 py-1 sm:sticky sm:top-[92px] sm:px-4 sm:py-1.5 xl:hidden"
         >
           {sections.map((section) => (
             <a

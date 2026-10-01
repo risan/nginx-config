@@ -177,6 +177,24 @@ test.describe('mobile', () => {
     await expect(dialog.locator('[data-testid="config-code"]')).toContainText('server_name')
   })
 
+  test('control strip and section tabs fit inside the viewport', async ({ page }) => {
+    await page.goto('/')
+    const width = page.viewportSize()?.width ?? 0
+    const targets = [
+      page.getByRole('radiogroup', { name: 'What are you serving?' }),
+      page.getByRole('radiogroup', { name: 'Where does it run?' }),
+      ...(await page.getByRole('navigation', { name: 'Sections' }).getByRole('link').all()),
+    ]
+
+    for (const target of targets) {
+      const box = await target.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box?.x).toBeGreaterThanOrEqual(0)
+      expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width)
+    }
+    await expect(page.getByRole('radio', { name: 'Server / VM' })).toBeInViewport({ ratio: 1 })
+  })
+
   test('has no horizontal page scroll', async ({ page }) => {
     await page.goto('/')
 

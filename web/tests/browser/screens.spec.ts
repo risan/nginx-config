@@ -17,7 +17,8 @@ for (const size of sizes) {
       await page.goto('/')
       await page.getByRole('radio', { name: 'Reverse proxy' }).click()
       await page.getByRole('radio', { name: 'Built-in ACME' }).click()
-      await page.waitForTimeout(2000)
+      await page.waitForTimeout(3000)
+      await page.evaluate(() => window.scrollTo(0, 0))
       await page.screenshot({ path: `test-results/screens/${size.name}-${scheme}.png` })
       if (size.name === '1440') {
         await page.screenshot({

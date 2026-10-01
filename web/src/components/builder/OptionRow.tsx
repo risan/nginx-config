@@ -158,7 +158,7 @@ export function OptionRow(props: OptionRowProps) {
   return (
     <div
       id={`row-${def.key}`}
-      className="grid gap-x-4 gap-y-1 border-b border-border py-2 last:border-b-0 sm:grid-cols-[13rem_minmax(0,1fr)]"
+      className="grid gap-x-4 gap-y-1 border-b border-border py-1.5 last:border-b-0 sm:grid-cols-[13rem_minmax(0,1fr)]"
     >
       <div className="flex min-h-8 flex-wrap items-center gap-x-1.5 gap-y-1">
         <Label htmlFor={`opt-${def.key}`} className="text-[13px] leading-tight font-medium">
@@ -207,7 +207,7 @@ export function OptionRow(props: OptionRowProps) {
         <div data-control className="flex min-h-8 items-center">
           <Control {...props} />
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           {def.help}
           {selected?.help === undefined ? '' : ` ${selected.help}`}
         </p>
