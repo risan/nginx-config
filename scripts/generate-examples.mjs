@@ -4,40 +4,62 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { DEFAULT_OPTIONS, generateConfig, generateDefaultServer } from '../lib/config.js';
+import { defaultsFor } from '../lib/options.ts';
+import { generateConfig, generateDefaultServer } from '../lib/render.ts';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const checkOnly = process.argv.includes('--check');
 
-const tlsDefaults = {
-  tls: true,
-  hsts: false,
-  certificatePath: '/etc/nginx/tls/example.com/fullchain.pem',
-  certificateKeyPath: '/etc/nginx/tls/example.com/privkey.pem'
-};
+const manualTls = { https: 'manual' };
+
+function config(profile, target, overrides = {}) {
+  return { ...defaultsFor(profile, target), ...overrides };
+}
 
 const examples = [
-  ['nginx.conf', { ...DEFAULT_OPTIONS }],
-  ['docker/nginx.conf', {
-    ...DEFAULT_OPTIONS,
-    profile: 'static',
-    serverName: 'localhost',
-    listenPort: 8080,
-    documentRoot: '/usr/share/nginx/html',
-    tls: false,
-    assetCache: false
-  }],
+  ['nginx.conf', config('static', 'host')],
+  // The image default: static files, plain HTTP on 8080, served for localhost.
+  ['docker/nginx.conf', config('static', 'container', { serverName: 'localhost', documentRoot: '/usr/share/nginx/html' })],
   ['sites-example/no-default.conf', () => generateDefaultServer(80)],
-  ['sites-example/site.conf', { ...DEFAULT_OPTIONS }],
-  ['sites-example/site-ssl.conf', { ...DEFAULT_OPTIONS, ...tlsDefaults }],
-  ['sites-example/spa.conf', { ...DEFAULT_OPTIONS, profile: 'spa', assetCache: true }],
-  ['sites-example/spa-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'spa', assetCache: true, ...tlsDefaults }],
-  ['sites-example/php.conf', { ...DEFAULT_OPTIONS, profile: 'php', upstream: '127.0.0.1:9000', gzip: false }],
-  ['sites-example/php-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'php', upstream: '127.0.0.1:9000', gzip: false, ...tlsDefaults }],
-  ['sites-example/go.conf', { ...DEFAULT_OPTIONS, profile: 'go', upstream: '127.0.0.1:8081', gzip: false }],
-  ['sites-example/go-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'go', upstream: '127.0.0.1:8081', gzip: false, ...tlsDefaults }],
-  ['sites-example/proxy.conf', { ...DEFAULT_OPTIONS, profile: 'proxy', upstream: '127.0.0.1:3000', gzip: false, websocket: true }],
-  ['sites-example/proxy-ssl.conf', { ...DEFAULT_OPTIONS, profile: 'proxy', upstream: '127.0.0.1:3000', gzip: false, websocket: true, ...tlsDefaults }]
+  ['sites-example/static.conf', config('static', 'host')],
+  ['sites-example/static-ssl.conf', config('static', 'host', manualTls)],
+  ['sites-example/spa.conf', config('spa', 'host')],
+  ['sites-example/spa-ssl.conf', config('spa', 'host', manualTls)],
+  ['sites-example/php.conf', config('php', 'host')],
+  ['sites-example/php-ssl.conf', config('php', 'host', manualTls)],
+  ['sites-example/proxy.conf', config('proxy', 'host', { websocketPath: '/ws/' })],
+  ['sites-example/proxy-ssl.conf', config('proxy', 'host', { ...manualTls, websocketPath: '/ws/' })],
+  [
+    'sites-example/proxy-full.conf',
+    config('proxy', 'host', {
+      https: 'acme',
+      acmeEmail: 'admin@example.com',
+      http3: true,
+      hsts: 'host',
+      wwwRedirect: 'to-apex',
+      realIp: 'cloudflare',
+      upstreams: [
+        { address: '10.0.0.11:3000', backup: false },
+        { address: '10.0.0.12:3000', backup: false },
+        { address: '10.0.0.13:3000', backup: true }
+      ],
+      loadBalancing: 'least-conn',
+      websocketPath: '/ws/',
+      streamingPath: '/events/',
+      proxyCache: true,
+      rateLimit: 'on',
+      permissionsPolicy: true,
+      statusEndpoint: true
+    })
+  ],
+  [
+    'sites-example/container.conf',
+    config('proxy', 'container', {
+      ...manualTls,
+      serverName: 'example.com',
+      upstreams: [{ address: 'app:3000', backup: false }]
+    })
+  ]
 ];
 
 let drift = false;

@@ -1,7 +1,7 @@
 ARG NGINX_VERSION=1.30.5
 # Docker Official Image, free NGINX Open Source stable release.
 # The explicit digest keeps this image tied to the reviewed multi-arch image.
-FROM nginx:${NGINX_VERSION}-alpine@sha256:a5f2157a0302eb0c5e300415effb63a9e70ed1eb9c107283819bf6d149ab607c AS runtime
+FROM nginx:${NGINX_VERSION}-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94 AS runtime
 
 ARG NGINX_VERSION=1.30.5
 ARG VCS_REF=unknown
@@ -15,7 +15,7 @@ LABEL org.opencontainers.image.title="NGINX runtime" \
       org.opencontainers.image.vendor="risan" \
       org.opencontainers.image.licenses="MIT"
 
-# The generated default config listens on 8080, writes its PID and temporary
+# The generated default config (container target) listens on 8080, writes its PID and temporary
 # files to /tmp, and logs to the container's stdout/stderr. Users can replace
 # the complete config and document root with read-only mounts at runtime.
 # UID 101 is the nginx user already shipped in the official image, so no root
