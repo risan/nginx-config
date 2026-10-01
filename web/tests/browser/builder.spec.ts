@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
@@ -27,24 +25,22 @@ test.describe('builder', () => {
     expect(errors).toEqual([])
   })
 
-  test('works under the production Content-Security-Policy', async ({ page }) => {
-    const headers = readFileSync(new URL('../../dist/_headers', import.meta.url), 'utf8')
-    const policy = /Content-Security-Policy: (.+)/.exec(headers)?.[1]
-    expect(policy).toBeTruthy()
-
+  test('runs under the production CSP headers and meta policy', async ({ page }) => {
     const errors = trackConsoleErrors(page)
-    await page.route('**/*', async (route) => {
-      const response = await route.fetch()
-      await route.fulfill({
-        response,
-        headers: { ...response.headers(), 'content-security-policy': policy ?? '' },
-      })
-    })
-    await page.goto('/')
-    await page.getByRole('radio', { name: 'PHP' }).click()
+    const response = await page.goto('/')
+    const header = response?.headers()['content-security-policy'] ?? ''
 
+    expect(header).toContain("frame-ancestors 'none'")
+    expect(header).not.toContain('script-src')
+    await expect(page.locator('meta[http-equiv="content-security-policy"]')).toHaveAttribute(
+      'content',
+      /script-src 'self' 'sha256-/,
+    )
+
+    await page.getByRole('radio', { name: 'PHP' }).click()
     await expect(code(page)).toContainText('/index.php')
-    await expect(page.getByRole('button', { name: /switch to dark theme/i })).toBeVisible()
+    await page.getByRole('button', { name: /switch to dark theme/i }).click()
+    await expect(page.locator('html')).toHaveClass(/dark/)
     expect(errors).toEqual([])
   })
 

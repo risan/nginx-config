@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css'
 import ThemeToggle from '../components/ThemeToggle'
+import { themeScript } from '../../scripts/theme-script.mjs'
 import { NGINX_VERSION } from '../lib/engine.ts'
 
 interface Props {
@@ -34,15 +35,7 @@ const repo = 'https://github.com/risan/nginx-config'
     <meta name="twitter:card" content="summary" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="sitemap" href="/sitemap-index.xml" />
-    <script is:inline>
-      try {
-        var stored = localStorage.getItem('theme')
-        var prefersDark = matchMedia('(prefers-color-scheme: dark)').matches
-        if (stored === 'dark' || (stored !== 'light' && prefersDark)) {
-          document.documentElement.classList.add('dark')
-        }
-      } catch (error) {}
-    </script>
+    <script is:inline set:html={themeScript} />
     {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
   </head>
   <body class="min-h-screen">

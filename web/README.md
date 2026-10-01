@@ -9,7 +9,7 @@ Deployed as static assets on Cloudflare Workers (no adapter).
 - Tailwind CSS 4 via `@tailwindcss/vite`, shadcn/ui, lucide-react, IBM Plex (fontsource)
 - TypeScript 6 strict (`@astrojs/check` does not support TypeScript 7 yet)
 - Oxlint, Oxfmt (Prettier with `prettier-plugin-astro` only for `*.astro`)
-- Vitest (unit), Playwright + axe-core (browser)
+- Vitest (unit), Playwright + axe-core (browser, against `wrangler dev`)
 
 ## Layout
 
@@ -18,8 +18,7 @@ Deployed as static assets on Cloudflare Workers (no adapter).
 - `src/lib/state.ts` holds preset switching and the share-link hash. `src/lib/tokenize.ts` is the
   NGINX syntax tokenizer for the preview.
 - `docs/*.md` at the repository root is rendered at `/docs/<slug>/` through a content collection.
-- `scripts/csp-hashes.mjs` hashes inline scripts after the build and adds them to `script-src` in
-  `dist/_headers`, so the CSP never needs `'unsafe-inline'` for scripts.
+- CSP: `security.csp` in `astro.config.mjs` emits a hash-based `script-src` meta policy. `public/_headers` keeps only header-only directives. `scripts/check-links.mjs` fails the build on broken internal links.
 
 ## Scripts
 

@@ -21,8 +21,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    // Serves dist/. npm run test:browser builds first so tests run against the shipped output.
-    command: `npx astro preview --ignore-lock --host 127.0.0.1 --port ${port}`,
+    // wrangler dev serves dist/ with the real _headers, like production. npm run test:browser
+    // builds first so tests run against the shipped output.
+    command: `npx wrangler dev --ip 127.0.0.1 --port ${port}`,
     url: baseURL,
     timeout: 120_000,
     reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING === 'true',
