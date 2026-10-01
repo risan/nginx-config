@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 
+// Runs `nginx -t` in the pinned image for a matrix of generated configs.
+// All configs run in one container, so the whole matrix takes seconds.
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { DEFAULT_OPTIONS, generateConfig } from '../lib/config.js';
 
-const image = process.argv[2]
-  ?? process.env.NGINX_IMAGE
-  ?? 'nginx:1.30.5-alpine@sha256:a5f2157a0302eb0c5e300415effb63a9e70ed1eb9c107283819bf6d149ab607c';
+import { generateConfig } from '../lib/render.ts';
+import { NGINX_IMAGE } from '../lib/version.ts';
+import { buildMatrix, TEST_CERTIFICATE_DIRECTORY } from './matrix.ts';
+
+const image = process.argv[2] ?? process.env.NGINX_IMAGE ?? NGINX_IMAGE;
 const workdir = mkdtempSync(join(tmpdir(), 'nginx-config-syntax-'));
-const tlsDir = join(workdir, 'tls');
-mkdirSync(tlsDir);
+const certificateDirectory = join(workdir, 'tls');
+const configDirectory = join(workdir, 'confs');
+mkdirSync(certificateDirectory);
+mkdirSync(configDirectory);
 
 function run(command, args, label) {
   const result = spawnSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -20,57 +25,62 @@ function run(command, args, label) {
     process.stderr.write(result.stderr ?? '');
     throw new Error(`${label} failed with exit ${result.status ?? 'signal'}`);
   }
+
   return result.stdout;
 }
 
 try {
-  run('openssl', [
-    'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
-    '-subj', '/CN=localhost',
-    '-keyout', join(tlsDir, 'privkey.pem'),
-    '-out', join(tlsDir, 'fullchain.pem')
-  ], 'temporary TLS certificate generation');
+  run(
+    'openssl',
+    [
+      'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+      '-subj', '/CN=localhost',
+      '-keyout', join(certificateDirectory, 'privkey.pem'),
+      '-out', join(certificateDirectory, 'fullchain.pem')
+    ],
+    'temporary TLS certificate generation'
+  );
 
-  const profiles = ['static', 'spa', 'php', 'go', 'proxy'];
-  for (const profile of profiles) {
-    // Syntax checks run without a service DNS network. Loopback is a valid
-    // endpoint for parsing; the proxy smoke test below supplies a real backend
-    // and exercises DNS, forwarding headers, and runtime behavior.
-    const upstream = profile === 'php' ? '127.0.0.1:9000' : '127.0.0.1:8081';
-    const options = {
-      ...DEFAULT_OPTIONS,
-      profile,
-      serverName: 'localhost',
-      listenPort: 8080,
-      httpsPort: 8443,
-      documentRoot: '/usr/share/nginx/html',
-      upstream,
-      tls: false
-    };
-    const file = join(workdir, `${profile}.conf`);
-    writeFileSync(file, generateConfig(options), 'utf8');
-    run('docker', [
-      'run', '--rm', '--user', '0:0', '--entrypoint', 'nginx',
-      '--mount', `type=bind,src=${file},dst=/etc/nginx/nginx.conf,readonly`,
-      image, '-t', '-c', '/etc/nginx/nginx.conf', '-p', '/etc/nginx'
-    ], `${profile} syntax check`);
-    process.stdout.write(`PASS ${profile}\n`);
-
-    const tlsFile = join(workdir, `${profile}-tls.conf`);
-    writeFileSync(tlsFile, generateConfig({
-      ...options,
-      tls: true,
-      certificatePath: '/tmp/nginx-config-tls/fullchain.pem',
-      certificateKeyPath: '/tmp/nginx-config-tls/privkey.pem'
-    }), 'utf8');
-    run('docker', [
-      'run', '--rm', '--user', '0:0', '--entrypoint', 'nginx',
-      '--mount', `type=bind,src=${tlsFile},dst=/etc/nginx/nginx.conf,readonly`,
-      '--mount', `type=bind,src=${tlsDir},dst=/tmp/nginx-config-tls,readonly`,
-      image, '-t', '-c', '/etc/nginx/nginx.conf', '-p', '/etc/nginx'
-    ], `${profile} TLS syntax check`);
-    process.stdout.write(`PASS ${profile} TLS\n`);
+  const entries = buildMatrix();
+  for (const entry of entries) {
+    writeFileSync(join(configDirectory, `${entry.name}.conf`), generateConfig(entry.options), 'utf8');
   }
+
+  // Root is needed so nginx can create cache folders and read the test key.
+  const script = [
+    'failed=0',
+    'for file in /confs/*.conf; do',
+    '  if output=$(nginx -t -c "$file" -p /etc/nginx 2>&1); then echo "PASS $(basename "$file" .conf)"; else echo "FAIL $(basename "$file" .conf)"; echo "$output"; failed=$((failed + 1)); fi',
+    'done',
+    'echo "FAILED=$failed"',
+    '[ "$failed" -eq 0 ]'
+  ].join('\n');
+  const result = spawnSync(
+    'docker',
+    [
+      'run', '--rm', '--user', '0:0', '--entrypoint', 'sh',
+      '--mount', `type=bind,src=${configDirectory},dst=/confs,readonly`,
+      '--mount', `type=bind,src=${certificateDirectory},dst=${TEST_CERTIFICATE_DIRECTORY},readonly`,
+      image, '-c', script
+    ],
+    { encoding: 'utf8' }
+  );
+  const lines = (result.stdout ?? '').split('\n');
+  const failures = lines.filter((line) => line.startsWith('FAIL ')).length;
+  for (const line of lines) {
+    if (!line.startsWith('PASS ') || process.env.VERBOSE) {
+      if (line !== '') {
+        process.stdout.write(`${line}\n`);
+      }
+    }
+  }
+
+  process.stderr.write(result.stderr ?? '');
+  if (result.status !== 0 || failures > 0) {
+    throw new Error(`nginx -t failed for ${failures} of ${entries.length} configs`);
+  }
+
+  process.stdout.write(`PASS nginx -t accepted all ${entries.length} generated configs\n`);
 } finally {
   rmSync(workdir, { recursive: true, force: true });
 }

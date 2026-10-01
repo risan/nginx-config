@@ -1,0 +1,70 @@
+---
+import '../styles/global.css'
+import ThemeToggle from '../components/ThemeToggle'
+import { themeScript } from '../../scripts/theme-script.mjs'
+import { NGINX_VERSION } from '../lib/engine.ts'
+
+interface Props {
+  title: string
+  description: string
+  path?: string
+  jsonLd?: Record<string, unknown>
+  noindex?: boolean
+}
+
+const { title, description, path = '/', jsonLd, noindex = false } = Astro.props
+const site = 'https://nginx-config.risanb.com'
+const canonical = new URL(path, site).toString()
+const repo = 'https://github.com/risan/nginx-config'
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="nginx-config" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <script is:inline set:html={themeScript} />
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+  </head>
+  <body class="min-h-screen">
+    <header class="sticky top-0 z-30 flex h-11 items-center gap-3 border-b border-border bg-background px-4">
+      <a href="/" class="font-mono text-[13px] font-medium whitespace-nowrap">
+        nginx-config
+      </a>
+      <span class="rounded-sm border border-border whitespace-nowrap px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+        NGINX {NGINX_VERSION}
+        <span class="hidden sm:inline"> stable</span>
+      </span>
+      <nav aria-label="Primary" class="ml-auto flex items-center gap-4 text-[13px]">
+        <a href="/docs/" class="text-muted-foreground hover:text-foreground">
+          Docs
+        </a>
+        <a href={repo} class="text-muted-foreground hover:text-foreground">
+          GitHub
+        </a>
+        <ThemeToggle client:load />
+      </nav>
+    </header>
+    <slot />
+    <footer class="border-t border-border px-4 py-6 text-xs text-muted-foreground">
+      <div class="mx-auto flex max-w-[1680px] flex-wrap gap-x-4 gap-y-1">
+        <span>Runs in your browser. Nothing you enter is sent anywhere.</span>
+        <a href={repo} class="hover:text-foreground">
+          Source and license (MIT)
+        </a>
+      </div>
+    </footer>
+  </body>
+</html>

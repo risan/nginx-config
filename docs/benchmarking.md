@@ -26,34 +26,71 @@ backend with a remote backend and call the difference a configuration gain.
 
 ## Static checks
 
-Run the failure-capable renderer, browser, version, and syntax checks first. The
-example check is read-only; it fails if generated files drift:
+Run the failure-capable renderer, type, browser, version, and syntax checks
+first. The example check is read-only; it fails if generated files drift:
 
 ~~~bash
 set -eu
+npm ci
+npm run typecheck
+node --test tests/*.test.ts
 node scripts/generate-examples.mjs --check
-node --test tests/config.test.mjs
+node scripts/check-nginx-version.mjs
+node scripts/verify-nginx-configs.mjs
 npm --prefix web ci
 npm --prefix web run test:unit
 npm --prefix web run build
 npm --prefix web exec -- playwright install --with-deps chromium
 npm --prefix web run test:browser
-node scripts/check-nginx-version.mjs
-node scripts/verify-nginx-configs.mjs
 git diff --check
 ~~~
 
-The browser unit tests run in the web project's browser-like test environment;
-the build check catches import and production-bundle failures. The browser smoke
-script is `test:browser`; Playwright starts Vite on 127.0.0.1:4173 from its
-checked-in config, so no separate dev server is needed. Chromium and Linux
-system dependencies are required; the install command above is suitable for a
-fresh CI runner and may need administrator privileges. On a machine that
-already has the system libraries, use
-`npm --prefix web exec -- playwright install chromium`. The NGINX matrix must
-run against the pinned stable image and fails on any profile or TLS syntax
-error. Do not replace these checks with a successful file write or a single
-HTTP request.
+The renderer tests parse the generated text and assert one structural rule per
+audit item: indentation equals four spaces per brace level, security headers
+appear once per server, immutable assets are plain prefixes, and so on. The
+browser app's checks are described in [`web/README.md`](../web/README.md); the
+build check catches import and production-bundle failures. Chromium and Linux
+system dependencies are required for the browser tests; the install command
+above is suitable for a fresh CI runner and may need administrator privileges.
+
+`scripts/verify-nginx-configs.mjs` runs `nginx -t` in the pinned stable image
+over about a hundred generated configs in one container: every profile, target,
+and HTTPS mode, every option value at least once, and IPv4 and IPv6 QUIC servers
+with and without a www alias. It fails on any syntax error. Do not replace these
+checks with a successful file write or a single HTTP request.
+
+The runtime smoke scripts start the real image on a private Docker network. Each
+takes the image as its argument:
+
+~~~bash
+docker build -t nginx-config:local .
+sh scripts/smoke-image.sh nginx-config:local     # default site, read-only, non-root, gzip
+node scripts/smoke-proxy.mjs nginx-config:local  # identity, keepalive, WebSocket scope, failover, real IP,
+                                                 # alias redirect Locations, PROXY-protocol health probe
+node scripts/smoke-cache.mjs nginx-config:local  # proxy cache privacy and Vary
+node scripts/smoke-php.mjs nginx-config:local    # PHP-FPM, source protection, symlink release, FastCGI cache
+node scripts/smoke-static.mjs nginx-config:local # headers once, immutable assets, gzip, gzip_static
+node scripts/smoke-tls.mjs nginx-config:local    # redirect to the public port, h2, HSTS, resumption
+node scripts/smoke-http3.mjs nginx-config:local  # QUIC listener, a real HTTP/3 request (200 + Alt-Svc), TCP fallback
+node scripts/smoke-acme.mjs nginx-config:local   # Pebble: canonical + alias certificates, restart reuses them
+node scripts/smoke-resolve.mjs nginx-config:local # backend replaced, new IP, no reload (about 5 s)
+node scripts/smoke-bootstrap.mjs nginx-config:local # the printed certbot bootstrap, run from an empty folder (Pebble)
+node scripts/smoke-compose.mjs                   # the README Compose commands as printed, HTTP and TLS service
+node scripts/smoke-host-install.mjs              # host install/renewal-hook commands keep certbot live symlinks
+~~~
+
+`smoke-http3.mjs` makes the HTTP/3 request with a curl that supports it (the
+`ymuski/curl-http3` image pinned by digest, `HTTP3_CURL_IMAGE` to change it) and
+always fails without one. `scripts/diagnose-http3-listener.mjs` is a separate,
+diagnostic-only command (UDP listener and Alt-Svc, no HTTP/3 request) and does
+not count as qualification. `smoke-proxy.mjs` also performs a real WebSocket
+handshake (101) and frame echo against a small Node backend. `smoke-acme.mjs` pulls `ghcr.io/letsencrypt/pebble`
+and its test DNS server, and needs a free private subnet (random 10.x.x.0/24 by
+default, `SMOKE_ACME_SUBNET` to set one). `smoke-resolve.mjs` replaces the
+backend container behind a Docker network alias and waits for NGINX to follow
+the new address by itself. The generated config uses `valid=30s`; the test
+shortens it to `valid=1s` so the switch shows within seconds (about 5 s, mostly
+one 5 s connect timeout to the old address).
 
 Run the generated and hand-edited files through the same NGINX package that will
 serve them:
@@ -69,11 +106,16 @@ The official free stable image is a useful disposable check when the target
 configuration uses the same module set:
 
 ~~~bash
-docker run --rm -v "$PWD:/repo:ro" nginx:1.30.5-alpine \
-  nginx -t -c /repo/nginx.conf
+docker run --rm --user 0 --entrypoint nginx -v "$PWD:/repo:ro" \
+  nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94 \
+  -t -c /repo/docker/nginx.conf
 ~~~
 
-Relative include, certificate, and log paths must exist in the mounted layout.
+Include, certificate, and log paths must exist in the mounted layout.
+The root `nginx.conf` and most of `sites-example/` are made for the server
+target (certificate paths under `/etc/letsencrypt`, logs in `/var/log/nginx`),
+so test those with the files in place on a host, or generate the container
+target.
 Use the repository's CI container check when it prepares those paths or when
 your target image is different. A syntax test in another image is not proof
 that the production package can load the file.
@@ -96,9 +138,10 @@ Run a small deterministic matrix before a load test.
 | Static | Existing file, missing file, range request, conditional 304 |
 | SPA | Existing asset, missing asset returns 404, application route falls back to index.html |
 | Browser cache | Hashed asset is immutable; HTML, manifest, and service worker revalidate |
-| Gzip | Selected public static text has gzip and Vary; dynamic profiles stay off unless explicitly reviewed; images/archives are not recompressed |
-| PHP | Existing script runs; made-up .php returns 404 without reaching FPM |
-| Go/proxy | Host, scheme, and normalized client address reach the backend |
+| Gzip | Selected public static text has gzip and Vary, also with a `Via` header; `.gz` files are served by gzip_static; dynamic profiles stay off unless explicitly reviewed; images/fonts/archives are not recompressed |
+| Headers | Each security header appears exactly once on HTML, a hashed asset, a 404, and `/healthz` |
+| PHP | Existing script runs; made-up .php returns 404 without reaching FPM; `.PHP` never returns source; a symlink release switch takes effect at once |
+| Proxy | Host, scheme, and normalized client address reach the backend; normal requests reuse upstream connections, also on the WebSocket path |
 | Proxy failure | Connect/read failure returns the intended error; safe idempotent retry is bounded |
 | WebSocket | Upgrade returns 101 and an echo works; idle policy is understood |
 | Streaming | First event arrives promptly; heartbeat keeps the route alive |
@@ -111,8 +154,9 @@ Run a small deterministic matrix before a load test.
 Use an echo backend that returns received headers for identity tests. Send
 forged X-Forwarded-For, X-Real-IP, Forwarded, and X-Forwarded-Proto values from
 an untrusted client and verify that the edge overwrites them. Then test the
-trusted-load-balancer path from an allowlisted address. The browser form does
-not configure that trust boundary for you.
+trusted-load-balancer path from an allowlisted address
+(`scripts/smoke-proxy.mjs` does this with a second NGINX as the trusted hop).
+The builder only configures that trust boundary when you list the proxy ranges.
 
 For an HTTPS upstream, test both a valid and invalid certificate. The invalid
 case must fail closed when verification is enabled.

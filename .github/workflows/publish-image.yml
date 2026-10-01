@@ -24,22 +24,31 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
       - name: Check the version source
         run: node scripts/check-nginx-version.mjs
-      - name: Run renderer and example drift checks
+      - name: Type-check, test the renderer, and check example drift
         run: |
-          node --test tests/config.test.mjs
+          npm ci
+          npm run typecheck
+          node --test tests/*.test.ts
           node scripts/generate-examples.mjs --check
-      - name: Install and test the browser app
+      - name: Lint, test, and build the web app
         run: |
           npm --prefix web ci
           npm --prefix web audit --audit-level=moderate
+          npm --prefix web run lint
+          npm --prefix web run fmt:check
           npm --prefix web run test:unit
           npm --prefix web run build
-          cd web && npx playwright install --with-deps chromium
+      - name: Install Chromium and run browser tests
+        working-directory: web
+        run: |
+          npx playwright install --with-deps chromium
           npm run test:browser
-      - name: Parse every profile in stable NGINX
+      - name: Parse the generated option matrix in stable NGINX
         run: node scripts/verify-nginx-configs.mjs
       - name: Build the candidate without registry credentials
         run: docker build --pull --tag nginx-config:release-ci --build-arg VCS_REF="$GITHUB_SHA" --build-arg BUILD_VERSION=release-ci .
@@ -49,7 +58,14 @@ jobs:
           node scripts/smoke-proxy.mjs nginx-config:release-ci
           node scripts/smoke-cache.mjs nginx-config:release-ci
           node scripts/smoke-php.mjs nginx-config:release-ci
+          node scripts/smoke-static.mjs nginx-config:release-ci
           node scripts/smoke-tls.mjs nginx-config:release-ci
+          node scripts/smoke-http3.mjs nginx-config:release-ci
+          node scripts/smoke-resolve.mjs nginx-config:release-ci
+          node scripts/smoke-bootstrap.mjs nginx-config:release-ci
+          node scripts/smoke-compose.mjs
+          node scripts/smoke-host-install.mjs
+          node scripts/smoke-acme.mjs nginx-config:release-ci
 
   publish:
     name: Publish multi-architecture GHCR image

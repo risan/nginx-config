@@ -5,7 +5,7 @@ services:
     build:
       context: .
       args:
-        # Keep this equal to lib/version.js. CI checks the two values.
+        # Keep this equal to lib/version.ts. CI checks the two values.
         NGINX_VERSION: "1.30.5"
         BUILD_VERSION: "local"
         VCS_REF: "local"
@@ -21,11 +21,13 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     # The image includes a small static welcome site. For a generated profile,
-    # mount the complete renderer output and your application content instead:
+    # mount the complete renderer output and your application content instead.
+    # Use a config made for the "Container" target (ports 8080 and 8443, logs to
+    # stdout), such as sites-example/container.conf (SPA, HTTP only, server name localhost) or one from the web builder:
     #
-    #   NGINX_CONFIG=./sites-example/proxy.conf \
+    #   NGINX_CONFIG=./sites-example/container.conf \
     #   NGINX_CONTENT=./public \
-    #   NGINX_SERVER_NAME=example.com \
+    #   NGINX_SERVER_NAME=localhost \
     #   docker compose up --build
     #
     # Both mounts are read-only and replace the image defaults at these paths.
@@ -45,10 +47,11 @@ services:
   #   NGINX_TLS_CERTS=./path/to/certs \
   #   docker compose --profile tls up nginx-tls
   #
-  # The mounted configuration must listen on 8443 and point at certificate
-  # paths under /etc/nginx/tls. Set NGINX_TLS_SERVER_NAME to the same name as
-  # the mounted config's server_name so the local health check sends the right
-  # TLS SNI. The certificate directory and files must be readable by UID 101.
+  # The mounted configuration must be a "Container" target config with HTTPS
+  # set to your own certificate files (it listens on 8443). Its certificate
+  # paths must be under /etc/nginx/tls, for example sites-example/container-ssl.conf (certificates in ./ssl/example.com/).
+  # Set NGINX_TLS_SERVER_NAME to the same name as the mounted config's
+  # server_name so the local health check sends the right TLS SNI. The certificate directory and files must be readable by UID 101.
   # The default NGINX runtime remains HTTP-only.
   nginx-tls:
     profiles: [tls]

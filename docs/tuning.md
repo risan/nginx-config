@@ -5,7 +5,7 @@ matches a workload and improves a measured result. Keep a before/after record
 for throughput, error rate, p50/p95/p99 latency, CPU, memory, open files, and
 network and disk I/O. Warm and cold cache runs answer different questions.
 
-The Vue + Vite generator is a separate client deployed through Workers. The
+The browser builder is a separate client deployed through Workers. The
 Docker image runs NGINX for mounted user content and a reviewed generated
 configuration. The values below are starting points for that runtime, not
 universal best settings; test them against the actual site or service.
@@ -95,10 +95,15 @@ when a deployment must be discovered promptly. `immutable` is correct only if
 the URL changes whenever the bytes change. NGINX already emits validators for
 static files; do not disable `ETag` or `Last-Modified` as a speed trick.
 
-The renderer's asset-cache toggle scopes immutable caching to Vite-style hashed
-asset names and, for SPAs, keeps `/assets/` on a strict `try_files ... =404`
-path. Inspect the generated location and enable it only when every matched URL
-is immutable; a missing JavaScript or CSS file must remain a 404.
+The renderer's "cache forever" option takes a list of folders, for example
+`/assets/` (the SPA default) or `/build/` (the PHP default). Each folder becomes
+a plain prefix `location` with `try_files $uri =404`, the immutable
+`Cache-Control` value, and `access_log off`. Use it only for folders where every
+file name contains a content hash; a missing JavaScript or CSS file stays a 404.
+The earlier file-name regex was removed: Vite and Rollup put a dash, not a dot,
+before the hash (`index-BdK3x9aF.js`), so it missed them, and it matched
+unhashed names such as `jquery.validate.js`. The prefix is deliberately not
+`^~`, so the dotfile, sensitive-extension, and `\.php$` rules still win.
 
 `open_file_cache` can reduce filesystem metadata work for a large, stable, hot
 tree, but it consumes memory and file descriptors and can delay recognition of
@@ -111,8 +116,10 @@ open_file_cache_min_uses 2;
 open_file_cache_errors   off;
 ```
 
-Size it from the hot set and deployment behavior. Keep it off when rapid file
-replacement or a small tree matters more than repeated metadata lookups.
+The builder's option writes a smaller version (`max=1000 inactive=20s`, valid
+30 seconds). Size it from the hot set and deployment behavior. Keep it off when
+rapid file replacement or a small tree matters more than repeated metadata
+lookups.
 
 For large files, test the actual storage and filesystem before enabling
 `aio`, `aio threads`, or `directio`. `directio` changes when `sendfile` is used;
@@ -137,11 +144,16 @@ gzip_types
     image/svg+xml;
 ```
 
+The generated files use a longer list (text, markdown, CSV, WebVTT, JSON-LD,
+web manifests, GeoJSON, XHTML, feeds, WebAssembly, SVG, icons, BMP, and TTF/OTF
+fonts, following h5bp) and the NGINX default level 1. The level is an advanced
+option.
+
 Do not use `gzip_types *`: images, video, archives, and most modern fonts are
 already compressed. A higher level can save a few more bytes while increasing
 CPU and tail latency; compare bytes, CPU, and p95/p99 before changing it.
 
-The renderer keeps gzip off by default for PHP-FPM, Go, and general proxy
+The renderer keeps gzip off by default for PHP-FPM and general proxy
 responses. If dynamic gzip is explicitly enabled, restrict it to reviewed
 public responses and check for reflected secrets before enabling it;
 BREACH makes blanket compression unsafe. Static and SPA profiles can compress
@@ -150,8 +162,14 @@ public text assets when their gzip option is selected.
 Compressing a response that reflects secrets together with attacker-controlled
 input can expose information through the BREACH attack. Avoid dynamic gzip for
 such responses. Static public assets do not have that pattern. `gzip_static`
-can serve build-produced `.gz` files, but first check `nginx -V` for
-`ngx_http_gzip_static_module` in the target package.
+serves build-produced `.gz` files (with the same modification time as the
+original) and is on by default for the static and SPA profiles; without a `.gz`
+file it costs one extra file lookup. The official image is built with
+`ngx_http_gzip_static_module`; on another package, check `nginx -V` first. The
+generated files also set `gzip_proxied any` whenever gzip or gzip_static is on.
+The default (`off`) skips compression for any request that has a `Via` header,
+which CDNs add, and that would also silence `gzip_static` behind a CDN. For
+static content this has no BREACH risk.
 
 Brotli and Zstandard response filters are not NGINX core modules. Do not make a
 third-party module a default dependency; add one only when its source,
@@ -164,11 +182,17 @@ quickly and shield it from a slow client. Disable buffering only for a route
 that deliberately streams data, and then set a route-specific read timeout and
 send heartbeat data before the idle gap expires.
 
-The current stable line uses HTTP/1.1 and an upstream keep-alive cache by
-default. Old snippets that present `proxy_http_version 1.1`, an empty
-`Connection` header, or a copied `keepalive 32` as a universal speed fix are
-stale. Keep such directives explicit only when they document a compatibility
-choice or a measured pool size.
+The current stable line (1.29.7 and later) uses HTTP/1.1 and an upstream
+keep-alive cache by default (`keepalive 32 local`) and does not send a
+`Connection` header. Old snippets that present `proxy_http_version 1.1`, an
+empty `Connection` header, or a copied `keepalive 32` as a universal speed fix
+are stale, and the generated files no longer contain them. Keep such directives
+explicit only when they document a compatibility choice or a measured pool size.
+One mistake to avoid: the old WebSocket map with `default close;` made every
+normal request send `Connection: close`, which turned upstream keepalive off.
+The generated map is `default ""; ~*^websocket$ upgrade;`.
+`scripts/smoke-proxy.mjs` checks that a series of requests reuses one upstream
+connection.
 
 Start with the application-aware limits below and change them only from observed
 behavior:
@@ -178,6 +202,10 @@ proxy_connect_timeout 5s;
 proxy_send_timeout    60s;
 proxy_read_timeout    60s;
 ```
+
+`proxy_send_timeout` and `proxy_read_timeout` are NGINX defaults, so the
+generated files write only `proxy_connect_timeout 5s` (the default is 60), and a
+read timeout when you change it.
 
 Send and read timeouts measure the gap between operations, not the complete
 request time. A long-poll or SSE route needs a heartbeat or a longer route
@@ -194,15 +222,19 @@ not tied to a slow sender. Set `proxy_request_buffering off` only when the
 application deliberately accepts a streaming upload and the loss of retry
 ability after forwarding begins.
 
-The renderer's WebSocket, response-streaming, proxy-cache, and rate-limit
-switches apply to the generated proxy `location /` or server. If only one URL
-needs a behavior, split the configuration into locations and move that setting
-there after reviewing the location precedence rules.
+The renderer puts WebSocket and server-sent events in their own locations
+(`location ^~ /ws/`, `location ^~ /events/`), chosen with the WebSocket path and
+streaming path options. Only those paths get the `Upgrade` and `Connection`
+headers, a one-hour timeout, or `proxy_buffering off`. The proxy cache applies
+to `location /` only. The rate limit applies to every dynamic location (`/`, the
+WebSocket path, the streaming path, and PHP scripts), never to static files.
+Because `proxy_set_header` inheritance is all or nothing, each proxy location
+lists the full header set.
 
-WebSockets need the `Upgrade` and mapped `Connection` headers in their own
-location. A tunnel is closed after an idle read timeout unless the application
-sends ping frames or the location raises that timeout. Do not apply WebSocket
-headers to every ordinary HTTP route.
+A WebSocket tunnel is closed after an idle read timeout unless the application
+sends ping frames or the location raises that timeout. For server-sent events
+the app can also send `X-Accel-Buffering: no`, which NGINX honours per response,
+instead of turning buffering off for a path.
 
 For several backend instances, the default upstream method is round-robin. Add
 only the behavior your workload needs and keep retries safe. This is a current
@@ -218,6 +250,12 @@ upstream api {
     server api-2:8080 max_fails=3 fail_timeout=10s;
 }
 ```
+
+The builder writes this shape from its list of backend servers (each can be a
+`backup`), a balancing method (round robin, least connections, or a consistent
+hash of the client IP, which cannot be combined with backups), and, for two or
+more servers, `proxy_next_upstream error timeout http_502 http_503 http_504`
+with `proxy_next_upstream_tries 2`. It never adds `non_idempotent`.
 
 These are passive failure observations, not active health checks. `max_conns`,
 `backup`, and bounded `proxy_next_upstream_tries`/`proxy_next_upstream_timeout`
@@ -245,8 +283,13 @@ location / {
 }
 ```
 
-Replace the resolver with the local platform resolver and do not trust a public
-resolver for private service names. A stale or unavailable resolver can turn a
+The builder adds `resolve`, a `zone`, a `resolver`, and `resolver_timeout 5s`
+inside the upstream block automatically when a backend address is a host name
+(not an IP address, `localhost`, or a unix socket). Keep them in the block:
+tested on 1.30.5, an upstream group does not take its `valid` or timeout from an
+http-level `resolver`, and a replaced backend was then found only after about 30
+seconds (`scripts/smoke-resolve.mjs`). Replace the resolver with the local
+platform resolver and do not trust a public resolver for private service names. A stale or unavailable resolver can turn a
 healthy upstream into request failures; monitor it before using dynamic names.
 On older NGINX builds, check the version before using `resolve`; a variable
 `proxy_pass` is a compatibility fallback, but its URI replacement rules differ
@@ -291,21 +334,27 @@ TLS implementation must also be present.
 The most valuable PHP safeguard is checking that the requested script exists:
 
 ```nginx
-location ~ \.php$ {
+location ~* \.php$ {
     try_files $uri =404;
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
     fastcgi_pass unix:/run/php/php-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+    fastcgi_param DOCUMENT_ROOT $realpath_root;
+    # ...every other official fastcgi_params entry, each name once...
 }
 ```
 
+The generated location writes the full parameter list itself, so no name is set
+twice, and it uses `$realpath_root` so a symlink-based release (`current` ->
+`releases/42`) switches atomically with no stale PHP path cache. It also hides
+`X-Powered-By` and passes `$request_id`.
 Keep FastCGI request and response buffering on for ordinary pages. Increase
 buffers only when the error log shows an oversized upstream header and the
 application's header size is understood. Persistent FastCGI connections need
 both an upstream `keepalive` cache and `fastcgi_keep_conn on`; they can consume
 PHP-FPM capacity, so size them from queue and worker evidence.
 
-FastCGI caching is opt-in. Restrict it to public GET/HEAD responses, bypass
+FastCGI caching is opt-in (the builder's "Cache public PHP responses" reuses the
+proxy cache rules). Restrict it to public GET/HEAD responses, bypass
 authentication, sessions, carts, and admin paths, respect `Set-Cookie` and
 application cache headers, and define invalidation before launch.
 
@@ -336,7 +385,7 @@ listen 443 ssl;
 http2 on;
 ssl_protocols TLSv1.2 TLSv1.3;
 ssl_session_cache shared:SSL:10m;
-ssl_session_timeout 10m;
+ssl_session_timeout 1d;
 ```
 
 The `http2 on` directive replaces the deprecated `listen ... http2` parameter
@@ -344,17 +393,21 @@ on current NGINX. Let the current TLS library choose its defaults unless a
 known client or policy requires a tested TLS 1.2 cipher policy. Keep early data
 off because a request sent before handshake completion can be replayed.
 
-HTTP/3 is still experimental in NGINX. Treat it as a separate benchmark and
-operational project: it needs the module, UDP and TCP listeners, TLS 1.3,
-security updates, a persisted protected QUIC key, and a real client test. Keep
-TCP fallback working. It is not enabled by the browser generator's normal
-profiles.
+HTTP/3 is still marked experimental in the NGINX module documentation. Treat it
+as a separate benchmark and operational project: it needs the module (the
+official image has it), UDP and TCP listeners, TLS, 1.30.5 or later, and a real
+client test. Keep TCP fallback working. It is an opt-in choice in the builder,
+which also writes `quic_retry on`, a `reuseport` QUIC listener for the catch-all
+server, and the `Alt-Svc` header. A protected persistent `quic_host_key` is
+needed only when several instances must accept each other's QUIC tokens.
 
 ## Logs and limits
 
-Do not disable access logs to improve a synthetic score. Include request time,
-upstream time/status, status, bytes, protocol, and a safe correlation ID. A
-buffered log lowers write frequency but can lose the last buffer on a crash.
+Do not disable access logs to improve a synthetic score. The generated format
+includes request time, upstream time and status, status, bytes, protocol, and
+the request ID (`rid=`), and leaves out query strings and `Referer`. A buffered
+log (the builder's advanced option, `buffer=32k flush=5s`) lowers write
+frequency but can lose the last buffer on a crash.
 Never log cookies, authorization, query secrets, or request bodies by default.
 
 Use finite, application-aware request and header limits. Avoid

@@ -112,7 +112,7 @@ case "$nginx_version" in
 esac
 
 # Replace both the site content and the complete renderer-generated config.
-# This is the supported deployment contract for PHP, Go, and proxy profiles.
+# This is the supported deployment contract for PHP and proxy profiles.
 cat >"$custom_root/index.html" <<'EOF'
 <!doctype html>
 <html><body><h1>Mounted static content</h1></body></html>

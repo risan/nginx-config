@@ -24,15 +24,19 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
+      - name: Install renderer tooling (TypeScript)
+        run: npm ci
       - name: Check the single NGINX version source
         run: node scripts/check-nginx-version.mjs
+      - name: Type-check the renderer, scripts, and tests
+        run: npm run typecheck
       - name: Run renderer tests
-        run: node --test tests/config.test.mjs
+        run: node --test tests/*.test.ts
       - name: Check generated examples
         run: node scripts/generate-examples.mjs --check
 
   web:
-    name: Vue tests and build
+    name: Web app lint, tests, and build
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -43,17 +47,22 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Install browser app dependencies
+      - name: Install web app dependencies
         run: npm --prefix web ci
-      - name: Audit browser app dependencies
+      - name: Audit web app dependencies
         run: npm --prefix web audit --audit-level=moderate
-      - name: Run browser app unit tests
+      - name: Lint the web app, renderer, scripts, and tests
+        run: npm --prefix web run lint
+      - name: Check formatting
+        run: npm --prefix web run fmt:check
+      - name: Run web app unit tests
         run: npm --prefix web run test:unit
-      - name: Build browser app
+      - name: Type-check and build the web app
         run: npm --prefix web run build
-      - name: Install Chromium for browser smoke tests
-        run: cd web && npx playwright install --with-deps chromium
-      - name: Run browser smoke tests
+      - name: Install Chromium for browser tests
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run browser tests
         run: npm --prefix web run test:browser
 
   docker:
@@ -69,20 +78,34 @@ jobs:
           node-version: 24
       - name: Set up NGINX configuration test image
         run: node scripts/check-nginx-version.mjs
-      - name: Parse every generated profile in stable NGINX
+      - name: Parse the generated option matrix in stable NGINX
         run: node scripts/verify-nginx-configs.mjs
       - name: Build the production image without registry credentials
         run: docker build --pull --tag nginx-config:ci --build-arg VCS_REF="$GITHUB_SHA" --build-arg BUILD_VERSION=ci .
       - name: Exercise the image as an unprivileged read-only service
         run: sh scripts/smoke-image.sh nginx-config:ci
-      - name: Exercise proxy forwarding headers through the image
+      - name: Exercise proxy identity, keepalive, WebSocket scope, failover, and real IP
         run: node scripts/smoke-proxy.mjs nginx-config:ci
       - name: Exercise proxy cache privacy and method guards
         run: node scripts/smoke-cache.mjs nginx-config:ci
-      - name: Exercise PHP-FPM script checks
+      - name: Exercise PHP-FPM, source protection, symlink releases, and FastCGI cache
         run: node scripts/smoke-php.mjs nginx-config:ci
+      - name: Exercise security headers, immutable assets, and gzip
+        run: node scripts/smoke-static.mjs nginx-config:ci
       - name: Exercise TLS redirect and certificate path
         run: node scripts/smoke-tls.mjs nginx-config:ci
+      - name: Exercise HTTP/3 with a real HTTP/3 client
+        run: node scripts/smoke-http3.mjs nginx-config:ci
+      - name: Exercise DNS re-resolution of a replaced backend
+        run: node scripts/smoke-resolve.mjs nginx-config:ci
+      - name: Exercise the printed certbot bootstrap for containers
+        run: node scripts/smoke-bootstrap.mjs nginx-config:ci
+      - name: Exercise the documented Compose commands
+        run: node scripts/smoke-compose.mjs
+      - name: Exercise the printed host install and renewal-hook commands
+        run: node scripts/smoke-host-install.mjs
+      - name: Issue a certificate from a local Pebble ACME server
+        run: node scripts/smoke-acme.mjs nginx-config:ci
       - name: Validate Compose definition
         run: |
           docker compose -f compose.yaml config
