@@ -1,0 +1,130 @@
+---
+import Builder from '../components/builder/Builder'
+import Layout from '../layouts/Layout.astro'
+import { GROUPS, NGINX_VERSION, OPTIONS } from '../lib/engine.ts'
+
+const title = 'NGINX config generator for static sites, SPAs, PHP and reverse proxies'
+const description = `Generate a secure, tuned nginx.conf for NGINX ${NGINX_VERSION}. Pick static, SPA, PHP or reverse proxy, then HTTPS, caching and security options. Runs in your browser.`
+
+// Same reference text for every profile, so group the options once at build time.
+const referenceGroups = GROUPS.map((group) => ({
+  ...group,
+  label: group.id === 'backend' ? 'Proxy and PHP' : group.label,
+  options: OPTIONS.filter((option) => option.group === group.id),
+})).filter((group) => group.options.length > 0)
+
+const faq = [
+  {
+    question: 'Is my configuration sent to a server?',
+    answer:
+      'No. The page runs entirely in your browser. Share links keep your options in the part of the URL after #, which browsers do not send to servers.',
+  },
+  {
+    question: 'Which NGINX version is the output written for?',
+    answer: `NGINX ${NGINX_VERSION}, the current stable release. Every directive is checked with nginx -t in the matching container image.`,
+  },
+  {
+    question: 'Server or container: what changes?',
+    answer:
+      'A server config uses ports 80 and 443, writes logs to /var/log/nginx and runs as the nginx user. A container config uses ports 8080 and 8443, keeps temporary files in /tmp and logs to stdout and stderr, so it runs without root.',
+  },
+  {
+    question: 'Does the generator issue certificates?',
+    answer:
+      'It can configure the NGINX ACME module for Let’s Encrypt, or point to certificate files you already have. Port 80 must stay reachable for the ACME HTTP-01 challenge.',
+  },
+]
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'nginx-config',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Any (runs in a web browser)',
+  description,
+  url: 'https://nginx-config.risanb.com/',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+}
+---
+
+<Layout title={title} description={description} jsonLd={jsonLd}>
+  <main>
+    <div class="mx-auto max-w-[1680px] px-4 pt-4 pb-3">
+      <h1 class="text-lg font-semibold">NGINX config generator</h1>
+      <p class="mt-1 max-w-3xl text-[13px] text-muted-foreground">
+        Pick what you serve and where it runs, then adjust HTTPS, caching and security. You get a
+        complete nginx.conf for NGINX {NGINX_VERSION}, with a comment on every non-default setting.
+        Everything runs in your browser.
+      </p>
+    </div>
+    <Builder client:load />
+
+    <section
+      aria-labelledby="reference"
+      class="mx-auto max-w-[1680px] border-t border-border px-4 py-8"
+    >
+      <h2 id="reference" class="text-base font-semibold">
+        What each option does
+      </h2>
+      <p class="mt-1 max-w-3xl text-[13px] text-muted-foreground">
+        The same text appears as tooltips in the builder. Some options only apply to certain
+        profiles.
+      </p>
+      <div class="mt-4 grid gap-6 lg:grid-cols-2">
+        {referenceGroups.map((group) => (
+          <div>
+            <h3 class="text-sm font-semibold">{group.label}</h3>
+            <dl class="mt-2 divide-y divide-border border-y border-border">
+              {group.options.map((option) => (
+                <div class="py-2">
+                  <dt class="text-[13px] font-medium">
+                    {option.label}
+                    {option.experimental && (
+                      <span class="ml-1 text-[11px] font-normal text-warning">Experimental</span>
+                    )}
+                  </dt>
+                  <dd class="text-[13px] text-muted-foreground">
+                    {option.why}
+                    {option.docs && (
+                      <>
+                        {' '}
+                        <a
+                          href={option.docs}
+                          rel="noreferrer"
+                          class="text-foreground underline underline-offset-2"
+                        >
+                          Docs
+                        </a>
+                      </>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section aria-labelledby="faq" class="mx-auto max-w-[1680px] border-t border-border px-4 py-8">
+      <h2 id="faq" class="text-base font-semibold">
+        Questions
+      </h2>
+      <dl class="mt-3 grid max-w-3xl gap-4">
+        {faq.map((item) => (
+          <div>
+            <dt class="text-[13px] font-medium">{item.question}</dt>
+            <dd class="mt-0.5 text-[13px] text-muted-foreground">{item.answer}</dd>
+          </div>
+        ))}
+      </dl>
+      <p class="mt-4 text-[13px]">
+        Want the reasoning behind the defaults? Read the{' '}
+        <a href="/docs/" class="underline underline-offset-2">
+          guides
+        </a>
+        .
+      </p>
+    </section>
+  </main>
+</Layout>

@@ -1,0 +1,48 @@
+---
+import { render } from 'astro:content'
+
+import Layout from '../../layouts/Layout.astro'
+import { loadDocs } from '../../lib/docs'
+
+export async function getStaticPaths() {
+  const docs = await loadDocs()
+
+  return docs.map((doc) => ({ params: { slug: doc.slug }, props: { doc, docs } }))
+}
+
+const { doc, docs } = Astro.props
+const { Content } = await render(doc.entry)
+---
+
+<Layout
+  title={`${doc.title} | nginx-config`}
+  description={doc.description}
+  path={`/docs/${doc.slug}/`}
+>
+  <div class="mx-auto grid max-w-5xl gap-8 px-4 py-8 lg:grid-cols-[12rem_minmax(0,1fr)]">
+    <nav aria-label="Guides" class="text-[13px] lg:sticky lg:top-16 lg:h-fit">
+      <a href="/docs/" class="font-medium">
+        Guides
+      </a>
+      <ul class="mt-2 flex flex-col gap-1">
+        {docs.map((item) => (
+          <li>
+            <a
+              href={`/docs/${item.slug}/`}
+              aria-current={item.slug === doc.slug ? 'page' : undefined}
+              class:list={[
+                'block rounded-sm px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground',
+                item.slug === doc.slug && 'bg-muted font-medium text-foreground',
+              ]}
+            >
+              {item.title}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+    <article class="docs-prose prose max-w-none prose-neutral dark:prose-invert">
+      <Content />
+    </article>
+  </div>
+</Layout>

@@ -1,0 +1,29 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import { loadDocs } from '../../lib/docs'
+
+const docs = await loadDocs()
+---
+
+<Layout
+  title="NGINX guides: security, tuning, operations | nginx-config"
+  description="Guides behind the generated NGINX configuration: security, performance tuning, operations, migration and benchmarking."
+  path="/docs/"
+>
+  <main class="mx-auto max-w-3xl px-4 py-8">
+    <h1 class="text-lg font-semibold">Guides</h1>
+    <p class="mt-1 text-[13px] text-muted-foreground">
+      The reasoning and sources behind every default in the generator.
+    </p>
+    <ul class="mt-4 divide-y divide-border border-y border-border">
+      {docs.map((doc) => (
+        <li>
+          <a href={`/docs/${doc.slug}/`} class="block py-3 hover:bg-muted/50">
+            <span class="text-[13px] font-medium">{doc.title}</span>
+            <span class="mt-0.5 block text-[13px] text-muted-foreground">{doc.description}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </main>
+</Layout>

@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "printWidth": 100,
+  "ignorePatterns": [
+    "dist",
+    ".astro",
+    "node_modules",
+    "test-results",
+    "playwright-report",
+    "package-lock.json",
+    "**/*.astro"
+  ]
+}
