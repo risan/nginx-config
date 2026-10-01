@@ -481,3 +481,48 @@ Review: `plan-review.md` (verdict REVISE, 18 findings). All accepted unless note
 - R18 (18): advanced-only: `statusEndpoint`, `connLimit`, `accessLogBuffer`,
   `gzipLevel`, `crossOriginOpenerPolicy`, `openFileCache`, `workerConnections`,
   `workerUser`, `resolver`, ports. Compression controls sit together.
+
+## Revisions after Codex review round 2 (binding)
+
+Review: `plan-review-2.md` (5 findings, all accepted).
+
+- R19 (PROXY protocol health): when `realIpHeader=proxy_protocol`, also render a
+  plain loopback listener without `proxy_protocol` that serves `/healthz`
+  (first try `listen 127.0.0.1:<httpPort>;` next to the wildcard
+  `listen <httpPort> proxy_protocol;` — NGINX applies listen options per
+  address, so the Dockerfile/compose probe on 127.0.0.1 keeps working; verify
+  at runtime. If NGINX rejects or mis-applies it, use a separate loopback port
+  and update the Dockerfile and compose probes). Runtime test: probe succeeds
+  with a PROXY-protocol config.
+- R20 (bootstrap): the HTTP server always serves
+  `location ^~ /.well-known/acme-challenge/ { root <acmeWebroot>; try_files $uri
+  =404; }` for every name it lists (canonical + alias), including when
+  https=off, in every profile (so proxy profiles do not forward the token to the
+  backend). `acmeWebroot` is fixed per target (host `/var/www/_letsencrypt`,
+  container `/var/cache/nginx/acme-challenge`) and shown in deploySteps.
+  deploySteps for manual HTTPS: 1) deploy this tool's output with HTTPS off,
+  2) `certbot certonly --webroot -w <acmeWebroot> -d <name> [-d <alias>]`,
+  3) switch HTTPS to manual with the printed paths, 4) renewal keeps working
+  through the same location. Native `acme` mode is handled by the module.
+- R21 (redirect scheme/port): every redirect has a rendered, tested `Location`:
+  HTTP→HTTPS: `https://<canonical><:publicHttpsPort unless 443>$request_uri`
+  (one hop, also from the alias name). Alias→canonical when HTTPS is on:
+  same HTTPS target. Alias→canonical when HTTPS is off:
+  `$forwarded_proto://<canonical>$forwarded_port_suffix$request_uri`, where
+  the suffix map is empty for the scheme's default public port. Tests assert
+  exact `Location` values for: direct HTTP, direct HTTPS, behind a trusted TLS
+  proxy (XFP https), untrusted XFP, non-default public ports.
+- R22 (runtime proof, required): (a) DNS re-resolution: upstream by Docker
+  network alias with `resolve`; replace the backend container so the alias gets
+  a new IP; requests must reach the new backend without an NGINX reload.
+  (b) ACME: Pebble (ghcr.io/letsencrypt/pebble) + a challenge-test DNS or
+  Docker aliases; native module issues for canonical + alias through the HTTP
+  redirect server; restart NGINX with the same state volume and assert the
+  certificate is reused (same serial, no new order). (c) HTTP/3: a real
+  HTTP/3 request (curl with HTTP3 feature — check `curl --version` in an
+  Alpine/curl image; pick an image that has it) returns 200 and `Alt-Svc`;
+  TCP fallback still works. Only if a step is impossible in this environment,
+  stop and report exactly what blocked it — do not silently downgrade.
+- R23 (precompressed only): when `gzipStatic` is on, emit `gzip_vary on;` and
+  `gzip_proxied any;` even if dynamic `gzip` is off. Test gzip=false +
+  gzipStatic=true with and without `Via`.
