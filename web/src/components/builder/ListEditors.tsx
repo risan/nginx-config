@@ -113,20 +113,22 @@ export function UpstreamEditor({
             aria-describedby={errorId}
             onChange={(event) => update(index, { address: event.target.value })}
           />
-          <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <Switch
-              size="sm"
-              checked={item.backup}
-              aria-label={`${label} ${index + 1} is a backup`}
-              onCheckedChange={(checked) => update(index, { backup: checked })}
+          <div className="flex shrink-0 items-center gap-1">
+            <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch
+                size="sm"
+                checked={item.backup}
+                aria-label={`${label} ${index + 1} is a backup`}
+                onCheckedChange={(checked) => update(index, { backup: checked })}
+              />
+              Backup
+            </label>
+            <RemoveButton
+              label={`Remove ${label} ${index + 1}`}
+              disabled={value.length === 1}
+              onClick={() => onChange(value.filter((_, i) => i !== index))}
             />
-            Backup
-          </label>
-          <RemoveButton
-            label={`Remove ${label} ${index + 1}`}
-            disabled={value.length === 1}
-            onClick={() => onChange(value.filter((_, i) => i !== index))}
-          />
+          </div>
         </div>
       ))}
       <Button
