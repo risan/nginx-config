@@ -49,6 +49,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install web app dependencies
         run: npm --prefix web ci
+      - name: Audit web app dependencies
+        run: npm --prefix web audit --audit-level=moderate
       - name: Lint the web app, renderer, scripts, and tests
         run: npm --prefix web run lint
       - name: Check formatting
