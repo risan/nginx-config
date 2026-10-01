@@ -27,7 +27,7 @@ Deployed as static assets on Cloudflare Workers (no adapter).
 | `npm run dev`                       | Astro dev server                                     |
 | `npm run build`                     | `astro check` then `astro build` into `dist/`        |
 | `npm run preview`                   | Serve `dist/`                                        |
-| `npm run lint`                      | Oxlint                                               |
+| `npm run lint`                      | Oxlint over `web/`, `lib/`, `scripts/` and `tests/`  |
 | `npm run fmt` / `npm run fmt:check` | Oxfmt and Prettier (Astro files)                     |
 | `npm run test:unit`                 | Vitest                                               |
 | `npm run test:browser`              | Builds, then runs Playwright against `astro preview` |
@@ -43,3 +43,5 @@ First run of the browser tests needs `npx playwright install chromium`.
 `wrangler.jsonc` serves `./dist` as Workers static assets with a 404 page. `public/_headers` sets
 security headers and immutable caching for `/_astro/*`. Run `npx wrangler login` once, then
 `npm run deploy`.
+
+`no-control-regex` is off: the option validators in `lib/options.ts` reject control characters on purpose.

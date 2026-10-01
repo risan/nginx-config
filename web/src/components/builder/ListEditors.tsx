@@ -15,7 +15,7 @@ interface EditorProps<T> {
   onChange(next: T[]): void
 }
 
-const codeInput = 'h-8 font-mono text-[12.5px]'
+const codeInput = 'h-8 min-w-0 flex-1 basis-48 font-mono text-[12.5px]'
 
 function RemoveButton({
   label,
@@ -77,6 +77,7 @@ export function StringListEditor({
         size="sm"
         id={value.length === 0 ? `opt-${id}` : undefined}
         className="w-fit"
+        aria-label={`Add ${label}`}
         onClick={() => onChange([...value, ''])}
       >
         <Plus /> Add
@@ -101,7 +102,7 @@ export function UpstreamEditor({
   return (
     <div className="flex flex-col gap-2" data-field={id}>
       {value.map((item, index) => (
-        <div key={index} className="flex items-center gap-2">
+        <div key={index} className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Input
             id={index === 0 ? `opt-${id}` : undefined}
             className={codeInput}
@@ -133,6 +134,7 @@ export function UpstreamEditor({
         variant="outline"
         size="sm"
         className="w-fit"
+        aria-label={`Add ${label}`}
         onClick={() => onChange([...value, { address: '', backup: false }])}
       >
         <Plus /> Add upstream

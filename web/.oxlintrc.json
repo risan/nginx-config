@@ -13,6 +13,7 @@
   ],
   "rules": {
     "react/react-in-jsx-scope": "off",
-    "import/no-unassigned-import": "off"
+    "import/no-unassigned-import": "off",
+    "no-control-regex": "off"
   }
 }

@@ -1,6 +1,8 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { OPTIONS } from '../../src/lib/engine.ts'
+
 const code = (page: Page) => page.locator('[data-testid="config-code"]:visible')
 
 function trackConsoleErrors(page: Page): string[] {
@@ -15,7 +17,64 @@ function trackConsoleErrors(page: Page): string[] {
   return errors
 }
 
+async function chooseHttps(page: Page, label: string) {
+  await page.getByRole('combobox', { name: 'HTTPS' }).click()
+  await page.getByRole('option', { name: label }).click()
+}
+
 test.describe('builder', () => {
+  test('acme with HTTP/3 renders the directives the plan requires', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('radio', { name: 'Reverse proxy' }).click()
+    await chooseHttps(page, 'Automatic (NGINX ACME module)')
+    await page.getByRole('textbox', { name: 'Contact email' }).fill('admin@example.com')
+    await page.getByRole('switch', { name: 'HTTP/3 (QUIC)' }).click()
+
+    for (const directive of [
+      'http2 on;',
+      'ssl_reject_handshake on;',
+      'return 308 https://example.com',
+      'add_header_inherit merge;',
+      'acme_certificate letsencrypt;',
+      'quic_retry on;',
+    ]) {
+      await expect(code(page)).toContainText(directive)
+    }
+    await expect(page.getByRole('tab', { name: /Warnings \([1-9]/ })).toBeVisible()
+  })
+
+  test('marks changed lines after an edit, then fades the marker', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('.code-line.is-changed')).toHaveCount(0)
+
+    await page.getByRole('textbox', { name: 'Domain name' }).fill('changed.example.com')
+
+    await expect(page.locator('.code-line.is-changed').first()).toBeVisible()
+    await expect(page.locator('.code-line.is-changed')).toHaveCount(0, { timeout: 4000 })
+  })
+
+  test('does not mark lines when a share link is restored', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('radio', { name: 'Reverse proxy' }).click()
+    await page.getByRole('button', { name: 'Share' }).click()
+    const link = page.url()
+    await page.goto('/')
+    await page.goto(link)
+    await page.reload()
+
+    await expect(page.locator('[data-testid="config-code"]:visible')).toContainText('proxy_pass')
+    await expect(page.locator('.code-line.is-changed')).toHaveCount(0)
+  })
+
+  test('deploy and warnings tabs show real content', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: 'Deploy' }).click()
+    await expect(page.getByText('Test the config')).toBeVisible()
+
+    await page.getByRole('tab', { name: /Warnings/ }).click()
+    await expect(page.getByRole('tabpanel').getByRole('button', { name: /IPv6/ })).toBeVisible()
+  })
+
   test('loads without console errors and shows a config', async ({ page }) => {
     const errors = trackConsoleErrors(page)
     await page.goto('/')
@@ -38,7 +97,7 @@ test.describe('builder', () => {
     )
 
     await page.getByRole('radio', { name: 'PHP' }).click()
-    await expect(code(page)).toContainText('/index.php')
+    await expect(code(page)).toContainText('fastcgi_pass')
     await page.getByRole('button', { name: /switch to dark theme/i }).click()
     await expect(page.locator('html')).toHaveClass(/dark/)
     expect(errors).toEqual([])
@@ -52,12 +111,12 @@ test.describe('builder', () => {
     await expect(code(page)).toContainText('proxy_pass http://backend;')
 
     await page.getByRole('radio', { name: 'PHP' }).click()
-    await expect(code(page)).toContainText('/index.php')
+    await expect(code(page)).toContainText('fastcgi_pass')
   })
 
   test('switching target changes the preview and keeps edits', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('textbox', { name: 'Server name' }).fill('keep.example.com')
+    await page.getByRole('textbox', { name: 'Domain name' }).fill('keep.example.com')
     await page.getByRole('radio', { name: 'Container' }).click()
 
     await expect(code(page)).toContainText('listen 8080;')
@@ -68,46 +127,46 @@ test.describe('builder', () => {
     await page.goto('/')
     await expect(code(page)).toContainText('gzip on;')
 
-    await page.getByRole('switch', { name: 'Gzip compression' }).click()
+    await page.getByRole('switch', { name: 'Compress responses (gzip)' }).click()
 
     await expect(code(page)).not.toContainText('gzip on;')
   })
 
   test('options that depend on another option appear and disappear', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('textbox', { name: 'ACME contact email' })).toHaveCount(0)
+    await expect(page.getByRole('textbox', { name: 'Contact email' })).toHaveCount(0)
 
-    await page.getByRole('radio', { name: 'Built-in ACME' }).click()
+    await chooseHttps(page, 'Automatic (NGINX ACME module)')
 
-    await expect(page.getByRole('textbox', { name: 'ACME contact email' })).toBeVisible()
+    await expect(page.getByRole('textbox', { name: 'Contact email' })).toBeVisible()
   })
 
   test('advanced options sit behind a per-section toggle', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('spinbutton', { name: 'Gzip level' })).toHaveCount(0)
+    await expect(page.getByRole('spinbutton', { name: 'gzip level' })).toHaveCount(0)
 
     await page
       .getByRole('button', { name: /show advanced/i })
       .first()
       .click()
 
-    await expect(page.getByRole('spinbutton', { name: 'Gzip level' })).toBeVisible()
+    await expect(page.getByRole('spinbutton', { name: 'gzip level' })).toBeVisible()
   })
 
   test('an invalid value shows an error and blocks copy and download', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('textbox', { name: 'Server name' }).fill('not a domain')
+    await page.getByRole('textbox', { name: 'Domain name' }).fill('not a domain')
 
-    await expect(page.getByRole('alert').filter({ hasText: 'valid domain' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: 'domain name' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Copy', exact: true })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Download' })).toBeDisabled()
     await expect(page.getByText(/Fix 1 error to update/)).toBeVisible()
     await expect(code(page)).toContainText('server_name example.com;')
 
-    await page.getByRole('button', { name: 'Server name', exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'Server name' })).toBeFocused()
+    await page.getByRole('button', { name: 'Domain name', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Domain name' })).toBeFocused()
 
-    await page.getByRole('textbox', { name: 'Server name' }).fill('fixed.example.com')
+    await page.getByRole('textbox', { name: 'Domain name' }).fill('fixed.example.com')
     await expect(page.getByRole('button', { name: 'Copy', exact: true })).toBeEnabled()
     await expect(code(page)).toContainText('server_name fixed.example.com;')
   })
@@ -116,7 +175,7 @@ test.describe('builder', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('/')
     await page.getByRole('radio', { name: 'Reverse proxy' }).click()
-    await page.getByRole('textbox', { name: 'Server name' }).fill('shared.example.com')
+    await page.getByRole('textbox', { name: 'Domain name' }).fill('shared.example.com')
     await page.getByRole('button', { name: 'Share' }).click()
     await expect(page).toHaveURL(/#c=/)
     const link = page.url()
@@ -128,7 +187,7 @@ test.describe('builder', () => {
       'data-state',
       'on',
     )
-    await expect(fresh.getByRole('textbox', { name: 'Server name' })).toHaveValue(
+    await expect(fresh.getByRole('textbox', { name: 'Domain name' })).toHaveValue(
       'shared.example.com',
     )
     await expect(fresh.locator('[data-testid="config-code"]:visible')).toContainText(
@@ -234,5 +293,6 @@ test.describe('static pages', () => {
     await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', /nginx\.conf/)
     await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(1)
     await expect(page.getByRole('heading', { name: 'What each option does' })).toBeVisible()
+    await expect(page.locator('#reference ~ div dt')).toHaveCount(OPTIONS.length)
   })
 })

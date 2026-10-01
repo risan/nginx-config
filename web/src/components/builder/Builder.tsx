@@ -33,6 +33,17 @@ import { cn } from '@/lib/utils'
 import { OptionRow } from './OptionRow'
 import { Preview } from './Preview'
 
+// The schema labels are written for the form and the reference ("Single-page app");
+// the control strip needs the short forms to fit a phone.
+const SHORT_LABELS: Record<string, string> = {
+  static: 'Static',
+  spa: 'SPA',
+  php: 'PHP',
+  proxy: 'Reverse proxy',
+  host: 'Server / VM',
+  container: 'Container',
+}
+
 const SEGMENT_ITEM =
   'h-7 px-2.5 text-[13px] shadow-none data-[state=on]:border-primary/60 data-[state=on]:font-medium'
 
@@ -68,7 +79,7 @@ function Segmented<T extends string>(props: {
             title={item.description}
             className={SEGMENT_ITEM}
           >
-            {item.label}
+            {SHORT_LABELS[item.id] ?? item.label}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
@@ -110,9 +121,25 @@ export default function Builder() {
     label: OPTIONS.find((def) => def.key === key)?.label ?? key,
   }))
 
-  const setValue = useCallback((key: string, value: Options[string]) => {
+  function setValue(key: string, value: Options[string]) {
+    // A section that an error opened must stay open after the edit clears that error,
+    // so fields do not vanish under the cursor.
+    const opened = sections
+      .filter((section) =>
+        section.visible.some((def) => def.advanced === true && errors[def.key] !== undefined),
+      )
+      .map((section) => section.id)
+    const editedGroup = OPTIONS.find((def) => def.key === key && def.advanced === true)?.group
+    setAdvancedOpen((current) => {
+      const next = { ...current }
+      for (const id of [...opened, ...(editedGroup === undefined ? [] : [editedGroup])]) {
+        next[id] = true
+      }
+
+      return next
+    })
     dispatch({ type: 'set', key, value })
-  }, [])
+  }
 
   function changePreset(profile: Profile, target: Target) {
     dispatch({ type: 'preset', profile, target })
@@ -197,6 +224,7 @@ export default function Builder() {
       steps={steps}
       notices={notices}
       errorCount={errorCount}
+      markChanges={state.source === 'set'}
       errorFields={errorFields}
       onCopy={copyText}
       onDownload={download}
@@ -283,7 +311,7 @@ export default function Builder() {
               const basic = section.visible.filter((def) => def.advanced !== true)
               const advanced = section.visible.filter((def) => def.advanced === true)
               const hasAdvancedError = advanced.some((def) => errors[def.key] !== undefined)
-              const open = advancedOpen[section.id] === true || hasAdvancedError
+              const open = (advancedOpen[section.id] ?? basic.length === 0) || hasAdvancedError
 
               return (
                 <section

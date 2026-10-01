@@ -24,7 +24,10 @@ interface OptionRowProps {
   onChange(key: string, value: Options[string]): void
 }
 
-const SEGMENT_LIMIT = 4
+// Short choice lists read best as a segmented control. Long labels would overflow a
+// phone screen, so they use a select instead.
+const SEGMENT_MAX_CHOICES = 4
+const SEGMENT_MAX_CHARS = 34
 
 function Control({ def, options, error, onChange }: OptionRowProps) {
   const value = options[def.key]
@@ -35,7 +38,8 @@ function Control({ def, options, error, onChange }: OptionRowProps) {
   switch (def.kind) {
     case 'select': {
       const choices = def.choices ?? []
-      if (choices.length <= SEGMENT_LIMIT) {
+      const chars = choices.reduce((sum, choice) => sum + choice.label.length, 0)
+      if (choices.length <= SEGMENT_MAX_CHOICES && chars <= SEGMENT_MAX_CHARS) {
         return (
           <ToggleGroup
             id={id}
@@ -64,8 +68,21 @@ function Control({ def, options, error, onChange }: OptionRowProps) {
       }
 
       return (
-        <Select value={String(value)} onValueChange={(next) => onChange(def.key, next)}>
-          <SelectTrigger id={id} size="sm" className="h-8 w-56 shadow-none" aria-label={def.label}>
+        <Select
+          value={String(value)}
+          onValueChange={(next) => {
+            // Radix reports '' when its hidden native select re-syncs; that is not a choice.
+            if (next !== '') {
+              onChange(def.key, next)
+            }
+          }}
+        >
+          <SelectTrigger
+            id={id}
+            size="sm"
+            className="h-8 w-full max-w-sm shadow-none"
+            aria-label={def.label}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

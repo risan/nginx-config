@@ -15,6 +15,7 @@ export interface PreviewProps {
   steps: Steps
   notices: Warnings
   errorCount: number
+  markChanges: boolean
   errorFields: { key: string; label: string }[]
   onCopy(text: string): void
   onDownload(): void
@@ -83,14 +84,18 @@ function CodeView({ lines, changed }: { lines: string[]; changed: Set<number> })
   )
 }
 
-function useChangedLines(lines: string[]): Set<number> {
+function useChangedLines(lines: string[], enabled: boolean): Set<number> {
   const previous = useRef<string[] | null>(null)
   const [changed, setChanged] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     const before = previous.current
     previous.current = lines
-    if (before === null || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (
+      !enabled ||
+      before === null ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
       return
     }
 
@@ -103,15 +108,15 @@ function useChangedLines(lines: string[]): Set<number> {
     const timer = window.setTimeout(() => setChanged(new Set()), CHANGE_MARKER_MS)
 
     return () => window.clearTimeout(timer)
-  }, [lines])
+  }, [lines, enabled])
 
   return changed
 }
 
 export function Preview(props: PreviewProps) {
-  const { config, steps, notices, errorCount, errorFields, className } = props
+  const { config, steps, notices, errorCount, errorFields, markChanges, className } = props
   const lines = useMemo(() => config.replace(/\n$/, '').split('\n'), [config])
-  const changed = useChangedLines(lines)
+  const changed = useChangedLines(lines, markChanges)
   const [copied, setCopied] = useState(false)
   const blocked = errorCount > 0
 

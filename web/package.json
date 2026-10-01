@@ -7,7 +7,7 @@
     "dev": "astro dev",
     "build": "astro check && astro build",
     "preview": "astro preview",
-    "lint": "oxlint",
+    "lint": "cd .. && web/node_modules/.bin/oxlint -c web/.oxlintrc.json web lib scripts tests",
     "fmt": "oxfmt && prettier --write \"src/**/*.astro\"",
     "fmt:check": "oxfmt --check && prettier --check \"src/**/*.astro\"",
     "test:unit": "vitest run",
