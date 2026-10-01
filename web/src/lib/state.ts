@@ -1,5 +1,6 @@
 import {
   defaultsFor,
+  derivedDefaults,
   GROUPS,
   OPTIONS,
   PROFILES,
@@ -41,19 +42,17 @@ export function groupLabel(group: GroupId, profile: Profile): string {
   return GROUPS.find((g) => g.id === group)?.label ?? group
 }
 
-// Recomputes the domain-dependent defaults that the user has not edited.
+// Refreshes every default that follows the profile, target, domain, or www redirect, for
+// the fields the user has not edited. The renderer's helper owns what those defaults are.
 export function deriveDefaults(options: Options, edited: ReadonlySet<string>): Options {
-  const template = defaultsFor(options.profile, options.target)
-  const baseline = template.serverName as string
   const domain = String(options.serverName).toLowerCase()
-  if (!PLAIN_HOSTNAME.test(domain)) {
-    return options
-  }
-
+  // While the domain is not valid yet, derive from the default one so half-typed text never
+  // produces invalid paths in fields the user did not touch.
+  const source = PLAIN_HOSTNAME.test(domain) ? options : { ...options, serverName: 'example.com' }
   const next = { ...options }
-  for (const key of DERIVED_KEYS) {
-    if (!edited.has(key)) {
-      next[key] = String(template[key]).replaceAll(baseline, domain)
+  for (const [key, value] of Object.entries(derivedDefaults(source))) {
+    if (!edited.has(key) && value !== undefined) {
+      next[key] = value
     }
   }
 

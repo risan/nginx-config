@@ -1,6 +1,7 @@
 // The only module UI code imports the option schema and renderer from. The shared
 // modules live in the repository root so the CLI, tests, and this app use one renderer.
 export {
+  derivedDefaults,
   GROUPS,
   OPTIONS,
   PROFILES,

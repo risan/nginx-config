@@ -108,6 +108,31 @@ test.describe('errors', () => {
     ).toBeVisible()
   })
 
+  test('a reserved challenge path error shows beside its item', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Add Cache forever under these paths' }).click()
+    await page
+      .getByRole('textbox', { name: 'Cache forever under these paths 1' })
+      .fill('/.well-known/acme-challenge/')
+
+    await expect(
+      page.locator('#row-immutablePaths [data-item="0"]').getByRole('alert'),
+    ).toBeVisible()
+    await expect(banner(page)).toBeVisible()
+  })
+
+  test('a container certificate path outside /etc/nginx/tls is rejected inline', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.getByRole('radio', { name: 'Container' }).click()
+    await page.getByRole('combobox', { name: 'HTTPS' }).click()
+    await page.getByRole('option', { name: 'My own certificate files' }).click()
+    await page.getByRole('textbox', { name: 'Certificate file' }).fill('/srv/cert.pem')
+
+    await expect(page.locator('#row-certificatePath').getByRole('alert')).toBeVisible()
+  })
+
   test('a hidden invalid field does not block copy', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('combobox', { name: 'HTTPS' }).click()
