@@ -892,7 +892,7 @@ test('R7/R20: deploy steps define the certificate bootstrap and the container vo
 });
 
 test('warnings explain the risky choices and carry the option key', () => {
-  const find = (list: ReturnType<typeof warnings>, key: string) => list.find((warning) => warning.key === key);
+  const warningFor = (list: ReturnType<typeof warnings>, key: string) => list.find((warning) => warning.key === key);
   const risky = warnings({
     ...defaultsFor('proxy', 'host'),
     ...MANUAL_TLS,
@@ -903,18 +903,18 @@ test('warnings explain the risky choices and carry the option key', () => {
     rateLimit: 'on',
     wwwRedirect: 'to-apex'
   } as Options);
-  assert.equal(find(risky, 'http3')?.level, 'warn');
-  assert.match(find(risky, 'http3')!.message, /experimental/i);
-  assert.match(find(risky, 'hsts')!.message, /hard to undo/);
-  assert.match(find(risky, 'contentSecurityPolicy')!.message, /break/);
-  assert.match(find(risky, 'gzip')!.message, /BREACH/);
-  assert.match(find(risky, 'rateLimit')!.message, /real client IP/);
-  assert.match(find(risky, 'wwwRedirect')!.message, /both/);
+  assert.equal(warningFor(risky, 'http3')?.level, 'warn');
+  assert.match(warningFor(risky, 'http3')!.message, /experimental/i);
+  assert.match(warningFor(risky, 'hsts')!.message, /hard to undo/);
+  assert.match(warningFor(risky, 'contentSecurityPolicy')!.message, /break/);
+  assert.match(warningFor(risky, 'gzip')!.message, /BREACH/);
+  assert.match(warningFor(risky, 'rateLimit')!.message, /real client IP/);
+  assert.match(warningFor(risky, 'wwwRedirect')!.message, /both/);
   const behindProtocol = warnings({ ...defaultsFor('proxy', 'host'), realIp: 'custom', trustedProxies: ['10.0.0.1'], realIpHeader: 'proxy_protocol' } as Options);
-  assert.match(find(behindProtocol, 'realIpHeader')!.message, /127\.0\.0\.1:80/);
-  assert.equal(find(risky, 'ipv6')?.level, 'info');
-  assert.equal(find(warnings({ ...defaultsFor('static', 'host'), ...ACME } as Options), 'https')?.level, 'warn');
+  assert.match(warningFor(behindProtocol, 'realIpHeader')!.message, /127\.0\.0\.1:80/);
+  assert.equal(warningFor(risky, 'ipv6')?.level, 'info');
+  assert.equal(warningFor(warnings({ ...defaultsFor('static', 'host'), ...ACME } as Options), 'https')?.level, 'warn');
   assert.deepEqual(warnings(defaultsFor('static', 'container') as Options).filter((warning) => warning.level === 'warn'), []);
   assert.match(warnings(defaultsFor('static', 'container') as Options)[0]!.message, /8080/);
-  assert.equal(find(warnings({ ...defaultsFor('proxy', 'host'), rateLimit: 'on', realIp: 'cloudflare' } as Options), 'rateLimit'), undefined);
+  assert.equal(warningFor(warnings({ ...defaultsFor('proxy', 'host'), rateLimit: 'on', realIp: 'cloudflare' } as Options), 'rateLimit'), undefined);
 });

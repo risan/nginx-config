@@ -149,10 +149,6 @@ function usesHostnameBackend(o: ResolvedOptions): boolean {
   return hasBackend(o) && usesHostnameUpstream(o.upstreams);
 }
 
-function needsResolver(o: ResolvedOptions): boolean {
-  return o.https === 'acme' || usesHostnameBackend(o);
-}
-
 // A single address needs no group. Several servers, backups, or host names do.
 function needsUpstreamGroup(o: ResolvedOptions): boolean {
   return o.profile === 'proxy' || o.upstreams.length > 1 || o.upstreams.some((upstream) => upstream.backup) || usesHostnameBackend(o);
