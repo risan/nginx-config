@@ -23,19 +23,12 @@ export default defineConfig({
         "font-src 'self' data:",
         "connect-src 'self'",
       ],
-      // Style elements stay hashed (Astro adds the hashes). Only style attributes, which
-      // SSR output from React and Shiki contains and hashes cannot cover, are allowed inline.
+      // Inline <style> is allowed: libraries inject CSS with a measured scrollbar width, so no fixed
+      // hash can match. CSS cannot run script, and script-src stays strictly hash-only.
       styleDirective: {
-        // <style> elements that sonner and Radix Select inject at runtime. Their text is fixed
-        // per package version, so a dependency upgrade that changes it shows up as a CSP
-        // console error in the browser tests, which print the new hash.
-        hashes: [
-          { hash: 'sha256-StEaX+se6YS7pqjzrzMIA0KaX9zF/8zAhvQXZAe5epY=', kind: 'element' },
-          { hash: 'sha256-441zG27rExd4/il+NvIqyL8zFx5XmyNQtE381kSkUJk=', kind: 'element' },
-          { hash: 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo=', kind: 'element' },
-        ],
         resources: [
           { resource: "'self'", kind: 'element' },
+          { resource: "'unsafe-inline'", kind: 'element' },
           { resource: "'unsafe-inline'", kind: 'attribute' },
         ],
       },

@@ -313,18 +313,18 @@ test.describe('security policy and styling', () => {
     expect(errors).toEqual([])
   })
 
-  test('the CSP meta policy hashes style elements and limits inline to attributes', async ({
-    page,
-  }) => {
+  test('the CSP meta policy keeps script-src hash-only and allows inline CSS', async ({ page }) => {
     await page.goto('/')
-    const policy = await page
-      .locator('meta[http-equiv="content-security-policy"]')
-      .getAttribute('content')
+    const policy =
+      (await page.locator('meta[http-equiv="content-security-policy"]').getAttribute('content')) ??
+      ''
+    const scriptSrc = /script-src ([^;]*)/.exec(policy)?.[1] ?? ''
 
-    expect(policy).toMatch(/style-src-elem 'self' 'sha256-/)
+    expect(scriptSrc).toMatch(/'sha256-/)
+    expect(scriptSrc).not.toContain('unsafe-inline')
+    expect(scriptSrc).not.toContain('unsafe-eval')
+    expect(policy).toMatch(/style-src-elem 'self' 'unsafe-inline'/)
     expect(policy).toMatch(/style-src-attr 'unsafe-inline'/)
-    expect(policy).not.toMatch(/style-src 'self' 'unsafe-inline'/)
-    expect(policy).not.toMatch(/style-src-elem[^;]*'unsafe-inline'/)
   })
 
   test('select popovers use at most a faint shadow', async ({ page }) => {

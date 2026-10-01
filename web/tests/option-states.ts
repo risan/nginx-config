@@ -70,3 +70,11 @@ export function allStates(): NamedState[] {
 
   return states
 }
+
+// The states where every option can be edited and proven. Each profile and target with
+// certificate files and with ACME, all optional features on, makes every option visible.
+export function editStates(): NamedState[] {
+  return allStates().filter(
+    (state) => state.name.endsWith('/full') && !state.name.includes('https=off'),
+  )
+}

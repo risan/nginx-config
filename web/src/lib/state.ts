@@ -119,15 +119,17 @@ function fromBase64Url(text: string): string {
 }
 
 // The hash carries only what differs from the defaults of the chosen profile and target.
-// Domain-derived paths are included only when the user edited them.
+// Edited fields are always included. Derived paths are included only when edited.
 export function encodeShareHash(options: Options, edited: ReadonlySet<string> = new Set()): string {
   const defaults = defaultsFor(options.profile, options.target)
   const diff: Record<string, unknown> = { profile: options.profile, target: options.target }
 
   for (const def of OPTIONS) {
-    const include = DERIVED_KEYS.includes(def.key)
-      ? edited.has(def.key)
-      : !same(options[def.key], defaults[def.key])
+    // An edited field is always shared, even when its value equals a default, because that
+    // value then stays put when the profile or target changes later.
+    const include =
+      edited.has(def.key) ||
+      (!DERIVED_KEYS.includes(def.key) && !same(options[def.key], defaults[def.key]))
     if (include) {
       diff[def.key] = options[def.key]
     }

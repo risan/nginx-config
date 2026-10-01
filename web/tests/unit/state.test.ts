@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { defaultsFor, OPTIONS, validateOptions } from '../../src/lib/engine.ts'
+import { builderReducer, initialBuilderState } from '../../src/lib/builder-state.ts'
 import {
   decodeShareHash,
   deriveDefaults,
@@ -68,6 +69,26 @@ describe('share hash', () => {
       ),
     )
     expect(edited.documentRoot).toBe('/srv/site')
+  })
+
+  it('keeps edit intent for a value equal to a default', () => {
+    // Host default HTTP port is 80. The user sets 8080, which is the container default.
+    let state = builderReducer(initialBuilderState(), { type: 'set', key: 'httpPort', value: 8080 })
+    state = builderReducer(state, { type: 'preset', profile: 'static', target: 'container' })
+    expect(state.options.httpPort).toBe(8080)
+
+    const restored = decodeShareHash(encodeShareHash(state.options, state.edited))
+    expect(restored?.edited.has('httpPort')).toBe(true)
+
+    const back = builderReducer(
+      builderReducer(initialBuilderState(), {
+        type: 'restore',
+        options: restored?.options ?? state.options,
+        edited: restored?.edited ?? new Set(),
+      }),
+      { type: 'preset', profile: 'static', target: 'host' },
+    )
+    expect(back.options.httpPort).toBe(8080)
   })
 
   it('restores derived paths from the domain in the link', () => {
