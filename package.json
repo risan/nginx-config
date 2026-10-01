@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "NGINX config renderer, option schema, and verification scripts. The browser app is in web/.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "examples": "node scripts/generate-examples.mjs",
+    "examples:check": "node scripts/generate-examples.mjs --check"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "typescript": "^6.0.3"
+  }
+}
