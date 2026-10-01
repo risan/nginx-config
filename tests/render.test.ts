@@ -644,10 +644,14 @@ test('C11/C13: upstream groups with failover, backups, balancing, and name resol
   const named = configFor('proxy', 'container', { upstreams: [{ address: 'app:3000', backup: false }] });
   assert.deepEqual(find(http(named), 'upstream')[0]!.directives, [
     { name: 'zone', args: 'backend 64k' },
+    { name: 'resolver', args: '127.0.0.11 valid=30s ipv6=off' },
+    { name: 'resolver_timeout', args: '5s' },
     { name: 'server', args: 'app:3000 resolve' }
   ]);
-  assert.deepEqual(directive(http(named), 'resolver'), ['127.0.0.11 valid=30s ipv6=off']);
-  assert.deepEqual(directive(http(configFor('proxy', 'host', { upstreams: [{ address: 'app:3000', backup: false }], resolver: '10.0.0.2 2001:db8::53' })), 'resolver'), ['10.0.0.2 [2001:db8::53] valid=30s ipv6=on']);
+  assert.deepEqual(directive(http(named), 'resolver'), [], 'the group has its own resolver');
+  const hosted = find(http(configFor('proxy', 'host', { upstreams: [{ address: 'app:3000', backup: false }], resolver: '10.0.0.2 2001:db8::53' })), 'upstream')[0]!;
+  assert.deepEqual(directive(hosted, 'resolver'), ['10.0.0.2 [2001:db8::53] valid=30s ipv6=on']);
+  assert.deepEqual(directive(hosted, 'resolver_timeout'), ['5s']);
   assert.deepEqual(directive(http(single), 'resolver'), []);
 });
 

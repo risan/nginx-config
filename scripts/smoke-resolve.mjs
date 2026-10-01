@@ -34,12 +34,14 @@ function containerAddress(container) {
 await runSmoke(smoke, async () => {
   smoke.createNetwork();
   const first = smoke.startNginx({ containerName: 'backend-a', config: backendConfig('a'), alias: 'backend' });
-  const config = generateConfig({
+  // The generated resolver uses valid=30s. The test shortens it to 1s so the switch is visible within seconds.
+  const generated = generateConfig({
     ...defaultsFor('proxy', 'container'),
     serverName: 'localhost',
     upstreams: [{ address: 'backend:8081', backup: false }]
   });
-  assert(config.includes('server backend:8081 resolve;') && /resolver 127\.0\.0\.11 valid=30s/.test(config), 'the config does not re-resolve the backend name');
+  assert(generated.includes('server backend:8081 resolve;') && generated.includes('zone backend 64k;') && generated.includes('resolver 127.0.0.11 valid=30s') && generated.includes('resolver_timeout 5s;'), 'the config does not re-resolve the backend name');
+  const config = generated.replace('valid=30s', 'valid=1s');
   const edge = smoke.startNginx({ containerName: 'edge', config, publish: [8080] });
   const port = await smoke.port(edge, 8080);
   const firstAddress = containerAddress(first);
@@ -68,18 +70,18 @@ await runSmoke(smoke, async () => {
 
   const started = Date.now();
   let result = '';
-  while (Date.now() - started < 120000) {
+  while (Date.now() - started < 20000) {
     result = await body();
     if (result === '200:backend-b') {
       break;
     }
 
-    await sleep(1000);
+    await sleep(250);
   }
 
-  assert(result === '200:backend-b', `NGINX did not switch to the new backend (${secondAddress}) without a reload; last answer: ${result}`);
+  assert(result === '200:backend-b', `NGINX did not switch to the new backend (${secondAddress}) within 20s without a reload; last answer: ${result}`);
   const reloads = smoke.docker(['logs', edge]);
   assert(!/signal process started|reconfiguring/.test(reloads), 'NGINX was reloaded during the test');
 
-  process.stdout.write(`PASS NGINX re-resolved the backend name ${firstAddress} -> ${secondAddress} after ${Math.round((Date.now() - started) / 1000)}s, with no reload\n`);
+  process.stdout.write(`PASS NGINX re-resolved the backend name ${firstAddress} -> ${secondAddress} after ${((Date.now() - started) / 1000).toFixed(1)}s (resolver valid=1s), with no reload\n`);
 });

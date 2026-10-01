@@ -367,15 +367,22 @@ function writeTlsPolicy(w: ConfigWriter, o: ResolvedOptions): void {
   }
 }
 
+function resolverLine(o: ResolvedOptions): string {
+  const addresses = o.resolver.split(' ').map((address) => (address.includes(':') ? `[${address}]` : address));
+
+  return `resolver ${addresses.join(' ')} valid=30s ipv6=${o.ipv6 ? 'on' : 'off'};`;
+}
+
+// Only the ACME module reads the http-level resolver. An upstream group ignores its valid and timeout
+// settings and needs its own resolver (see writeUpstream).
 function writeResolver(w: ConfigWriter, o: ResolvedOptions): void {
-  if (!needsResolver(o)) {
+  if (o.https !== 'acme') {
     return;
   }
 
-  const addresses = o.resolver.split(' ').map((address) => (address.includes(':') ? `[${address}]` : address));
   w.blank();
-  w.comment('Name servers for ACME and for backend host names. valid=30s re-checks names often.');
-  w.line(`resolver ${addresses.join(' ')} valid=30s ipv6=${o.ipv6 ? 'on' : 'off'};`);
+  w.comment('Name servers for the ACME module.');
+  w.line(resolverLine(o));
 }
 
 function writeCompression(w: ConfigWriter, o: ResolvedOptions): void {
@@ -531,6 +538,9 @@ function writeUpstream(w: ConfigWriter, o: ResolvedOptions): void {
     if (usesHostnameBackend(o)) {
       w.comment('Re-resolve host names while NGINX runs. A resolved name needs a shared memory zone.');
       w.line(`zone ${upstreamGroupName(o)} 64k;`);
+      w.comment('The group needs its own resolver: it re-checks names every 30 seconds and gives up on a silent name server after 5 seconds (the default is 30).');
+      w.line(resolverLine(o));
+      w.line('resolver_timeout 5s;');
     }
 
     if (o.loadBalancing === 'least-conn') {
