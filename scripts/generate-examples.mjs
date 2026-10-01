@@ -52,8 +52,11 @@ const examples = [
       statusEndpoint: true
     })
   ],
+  // The HTTP-only container example for the Compose quick start (server name localhost).
+  ['sites-example/container.conf', config('spa', 'container', { serverName: 'localhost' })],
+  // The HTTPS container example for the Compose TLS service: certificates under /etc/nginx/tls/example.com/.
   [
-    'sites-example/container.conf',
+    'sites-example/container-ssl.conf',
     config('proxy', 'container', {
       ...manualTls,
       serverName: 'example.com',

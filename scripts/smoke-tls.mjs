@@ -67,14 +67,14 @@ await runSmoke(smoke, async () => {
     ...defaultsFor('spa', 'container'),
     serverName: 'localhost',
     https: 'manual',
-    certificatePath: '/tmp/nginx-config-tls/fullchain.pem',
-    certificateKeyPath: '/tmp/nginx-config-tls/privkey.pem',
+    certificatePath: '/etc/nginx/tls/fullchain.pem',
+    certificateKeyPath: '/etc/nginx/tls/privkey.pem',
     hsts: 'host'
   });
   assert(!config.includes('ssl_early_data') && !config.includes('ssl_session_tickets'), 'defaults must not be restated');
 
   smoke.createNetwork();
-  const edge = smoke.startNginx({ containerName: 'edge', config, mounts: [[certificates, '/tmp/nginx-config-tls']], publish: [8080, 8443] });
+  const edge = smoke.startNginx({ containerName: 'edge', config, mounts: [[certificates, '/etc/nginx/tls']], publish: [8080, 8443] });
   const httpPort = await smoke.port(edge, 8080);
   const httpsPort = await smoke.port(edge, 8443);
   await smoke.waitFor({ port: httpsPort, path: '/healthz', tls: true }, 204, 'TLS edge');
@@ -127,11 +127,11 @@ await runSmoke(smoke, async () => {
       serverName: 'example.com',
       wwwRedirect: 'to-apex',
       https: 'manual',
-      certificatePath: '/tmp/nginx-config-tls/fullchain.pem',
-      certificateKeyPath: '/tmp/nginx-config-tls/privkey.pem',
+      certificatePath: '/etc/nginx/tls/fullchain.pem',
+      certificateKeyPath: '/etc/nginx/tls/privkey.pem',
       publicHttpsPort
     });
-    const aliasEdge = smoke.startNginx({ containerName: `alias-${publicHttpsPort}`, config: aliasConfig, mounts: [[certificates, '/tmp/nginx-config-tls']], publish: [8080, 8443] });
+    const aliasEdge = smoke.startNginx({ containerName: `alias-${publicHttpsPort}`, config: aliasConfig, mounts: [[certificates, '/etc/nginx/tls']], publish: [8080, 8443] });
     const aliasHttp = await smoke.port(aliasEdge, 8080);
     const aliasHttps = await smoke.port(aliasEdge, 8443);
     await smoke.waitFor({ port: aliasHttps, path: '/healthz', host: 'example.com', tls: true }, 204, 'alias TLS edge');

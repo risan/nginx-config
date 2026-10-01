@@ -62,6 +62,8 @@ jobs:
           node scripts/smoke-tls.mjs nginx-config:release-ci
           node scripts/smoke-http3.mjs nginx-config:release-ci
           node scripts/smoke-resolve.mjs nginx-config:release-ci
+          node scripts/smoke-bootstrap.mjs nginx-config:release-ci
+          node scripts/smoke-compose.mjs
           node scripts/smoke-acme.mjs nginx-config:release-ci
 
   publish:

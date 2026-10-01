@@ -2,6 +2,8 @@ import { CLOUDFLARE_RANGES } from './cloudflare-ips.ts';
 import {
   aliasServerName,
   canonicalServerName,
+  certificateName,
+  CONTAINER_CERTIFICATE_ROOT,
   parseUpstreamAddress,
   usesHostnameUpstream,
   validateOptions,
@@ -913,8 +915,8 @@ function writeProxyLocations(w: ConfigWriter, o: ResolvedOptions): void {
 
   if (o.websocketPath !== '') {
     w.blank();
-    w.comment('Only this path is upgraded to WebSocket.');
-    w.block(`location ^~ ${o.websocketPath}`, () => {
+    w.comment('Only this path is upgraded to WebSocket. It is a plain prefix, so the dotfile rule still wins.');
+    w.block(`location ${o.websocketPath}`, () => {
       writeProxyDirectives(w, o, false);
       w.line('proxy_set_header Upgrade $websocket_upgrade;');
       w.line('proxy_set_header Connection $connection_upgrade;');
@@ -930,7 +932,7 @@ function writeProxyLocations(w: ConfigWriter, o: ResolvedOptions): void {
   if (o.streamingPath !== '') {
     w.blank();
     w.comment('Server-sent events: send each event to the client at once. Only this path gives up buffering.');
-    w.block(`location ^~ ${o.streamingPath}`, () => {
+    w.block(`location ${o.streamingPath}`, () => {
       writeProxyDirectives(w, o, false);
       w.line('proxy_buffering off;');
       w.line('proxy_read_timeout 1h;');
@@ -1123,22 +1125,23 @@ export interface DeployStep {
   note?: string;
 }
 
+// Every certbot command names the lineage explicitly, so the paths in the config can rely on it.
 function certbotNames(o: ResolvedOptions): string {
   const names = [canonicalServerName(o), aliasServerName(o)].filter((name): name is string => name !== null);
 
-  return names.map((name) => `-d ${name}`).join(' ');
+  return `--cert-name ${certificateName(o)} ${names.map((name) => `-d ${name}`).join(' ')}`;
 }
 
-function containerRunCommand(o: ResolvedOptions): string {
-  const publishedHttp = `-p ${o.publicHttpPort}:${o.httpPort}`;
-  const publishedHttps = httpsOn(o) ? ` -p ${o.publicHttpsPort}:${o.httpsPort}${o.http3 ? ` -p ${o.publicHttpsPort}:${o.httpsPort}/udp` : ''}` : '';
+// The runtime settings of the container. The test command and the run command share them, so a
+// config that passes the test sees the same user, mounts, and writable paths when it runs.
+function containerRuntimeArguments(o: ResolvedOptions): string {
   const mounts = [`-v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro"`];
   if (serversFiles(o)) {
     mounts.push(`-v "$PWD/public:${o.documentRoot}:ro"`);
   }
 
   if (o.https === 'manual') {
-    mounts.push('-v "$PWD/tls:/etc/nginx/tls:ro"', `-v "$PWD/acme-challenge:${acmeWebroot(o)}:ro"`);
+    mounts.push(`-v "$PWD/tls:${CONTAINER_CERTIFICATE_ROOT}:ro"`, `-v "$PWD/acme-challenge:${acmeWebroot(o)}:ro"`);
   }
 
   if (o.https === 'acme') {
@@ -1146,27 +1149,60 @@ function containerRunCommand(o: ResolvedOptions): string {
   }
 
   return [
-    'docker run -d --name nginx --restart unless-stopped',
-    `${publishedHttp}${publishedHttps}`,
     '--user 101:101 --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=1777',
     '--cap-drop ALL --security-opt no-new-privileges:true',
-    mounts.join(' '),
-    NGINX_IMAGE
+    mounts.join(' ')
   ].join(' ');
+}
+
+function containerTestCommand(o: ResolvedOptions): string {
+  return `docker run --rm ${containerRuntimeArguments(o)} --entrypoint nginx ${NGINX_IMAGE} -t`;
+}
+
+function containerRunCommand(o: ResolvedOptions): string {
+  const publishedHttp = `-p ${o.publicHttpPort}:${o.httpPort}`;
+  const publishedHttps = httpsOn(o) ? ` -p ${o.publicHttpsPort}:${o.httpsPort}${o.http3 ? ` -p ${o.publicHttpsPort}:${o.httpsPort}/udp` : ''}` : '';
+
+  return `docker run -d --name nginx --restart unless-stopped ${publishedHttp}${publishedHttps} ${containerRuntimeArguments(o)} ${NGINX_IMAGE}`;
 }
 
 const FIRST_RUN_NOTE =
   'For the first start, set HTTPS to Off in the builder and use that config for the steps up to the certificate. The certificate must exist before the TLS server can start.';
 
-function hostCertificateSteps(o: ResolvedOptions): DeployStep[] {
-  const names = certbotNames(o);
+function certbotLiveDirectory(o: ResolvedOptions): string {
+  return `/etc/letsencrypt/live/${certificateName(o)}`;
+}
 
-  return [
+const parentDirectory = (path: string) => path.slice(0, path.lastIndexOf('/'));
+
+// A host that keeps the certbot paths needs no copy. Any other path gets files installed at the configured place.
+function hostInstallCommands(o: ResolvedOptions): string[] {
+  const live = certbotLiveDirectory(o);
+  if (o.certificatePath === `${live}/fullchain.pem` && o.certificateKeyPath === `${live}/privkey.pem`) {
+    return [];
+  }
+
+  return [`install -D -m 644 ${live}/fullchain.pem ${o.certificatePath}`, `install -D -m 600 ${live}/privkey.pem ${o.certificateKeyPath}`];
+}
+
+function hostCertificateSteps(o: ResolvedOptions): DeployStep[] {
+  const install = hostInstallCommands(o);
+  const steps: DeployStep[] = [
     {
       title: 'Get the first certificate',
-      command: `sudo certbot certonly --webroot -w ${acmeWebroot(o)} ${names}`,
-      note: 'The HTTP server answers the challenge for every name it lists, in every profile, and never forwards it to your backend.'
-    },
+      command: `sudo certbot certonly --webroot -w ${acmeWebroot(o)} ${certbotNames(o)}`,
+      note: 'The HTTP server answers the challenge for every name it lists, in every profile, and never forwards it to your backend. Certbot asks for an email address and the terms of service.'
+    }
+  ];
+  if (install.length > 0) {
+    steps.push({
+      title: 'Install the certificate where the config expects it',
+      command: install.map((command) => `sudo ${command}`).join(' && '),
+      note: 'The key stays readable by root only. NGINX reads it while it still runs as root.'
+    });
+  }
+
+  steps.push(
     {
       title: 'Switch HTTPS to My own certificate files, then deploy again',
       command: 'sudo nginx -t && sudo systemctl reload nginx',
@@ -1174,37 +1210,57 @@ function hostCertificateSteps(o: ResolvedOptions): DeployStep[] {
     },
     {
       title: 'Renew certificates and reload NGINX',
-      command: 'sudo certbot renew --deploy-hook "systemctl reload nginx"',
+      command: `sudo certbot renew --deploy-hook "${[...install, 'systemctl reload nginx'].join(' && ')}"`,
       note: 'Renewal uses the same challenge location, which stays on the HTTP port.'
     }
-  ];
+  );
+
+  return steps;
+}
+
+const certbotContainer = '-v "$PWD/letsencrypt:/etc/letsencrypt" -v "$PWD/acme-challenge:/acme" certbot/certbot';
+
+// Runs as root inside the NGINX image, so it can read certbot's private output. The key goes to group 101,
+// which the unprivileged NGINX user belongs to, with mode 640. Nobody else on the host can read it.
+function containerInstallCommand(o: ResolvedOptions): string {
+  const relative = (path: string) => path.slice(CONTAINER_CERTIFICATE_ROOT.length + 1);
+  const certificate = `/tls/${relative(o.certificatePath)}`;
+  const key = `/tls/${relative(o.certificateKeyPath)}`;
+  const live = `/le/live/${certificateName(o)}`;
+  const script = [
+    'set -e',
+    `mkdir -p ${parentDirectory(certificate)} ${parentDirectory(key)}`,
+    `cp -L ${live}/fullchain.pem ${certificate}`,
+    `cp -L ${live}/privkey.pem ${key}`,
+    `chmod 644 ${certificate}`,
+    `chown 0:101 ${key}`,
+    `chmod 640 ${key}`
+  ].join('; ');
+
+  return `docker run --rm --user 0 --entrypoint sh -v "$PWD/letsencrypt:/le:ro" -v "$PWD/tls:/tls" ${NGINX_IMAGE} -c '${script}'`;
 }
 
 function containerCertificateSteps(o: ResolvedOptions): DeployStep[] {
-  const names = certbotNames(o);
-  const certbot = `docker run --rm -v "$PWD/letsencrypt:/etc/letsencrypt" -v "$PWD/acme-challenge:/acme" certbot/certbot`;
-  const directory = `./tls/${o.serverName}`;
-
   return [
     {
       title: 'Get the first certificate',
-      command: `${certbot} certonly --webroot -w /acme ${names}`,
-      note: 'The running container (HTTPS off) answers the challenge from the mounted acme-challenge folder, for every name it lists.'
+      command: `docker run --rm -it ${certbotContainer} certonly --webroot -w /acme ${certbotNames(o)}`,
+      note: 'The running container (HTTPS off) answers the challenge from the mounted acme-challenge folder, for every name it lists. Certbot asks for an email address and the terms of service. For a script, replace -it with nothing and add --non-interactive --agree-tos -m you@example.com --no-eff-email.'
     },
     {
-      title: 'Copy the certificate where the config expects it',
-      command: `mkdir -p ${directory} && cp -L letsencrypt/live/${canonicalServerName(o)}/fullchain.pem letsencrypt/live/${canonicalServerName(o)}/privkey.pem ${directory}/ && chmod 644 ${directory}/privkey.pem`,
-      note: 'The key must be readable by user 101. Keep the folder private on the host.'
+      title: 'Install the certificate where the config expects it',
+      command: containerInstallCommand(o),
+      note: 'The key is readable by root and by group 101 (NGINX), and by nobody else.'
     },
     {
       title: 'Switch HTTPS to My own certificate files, then start the container again',
-      command: `docker rm -f nginx && ${containerRunCommand(o)}`,
-      note: 'Save the new config as nginx.conf first.'
+      command: `${containerTestCommand(o)} && docker rm -f nginx && ${containerRunCommand(o)}`,
+      note: 'Save the new config as nginx.conf first. The old container is removed only after the test passes.'
     },
     {
       title: 'Renew certificates',
-      command: `${certbot} renew && cp -L letsencrypt/live/${canonicalServerName(o)}/*.pem ${directory}/ && docker kill --signal HUP nginx`,
-      note: 'Run it from a timer. The HUP signal makes NGINX reload the new files.'
+      command: `docker run --rm ${certbotContainer} renew && ${containerInstallCommand(o)} && docker kill --signal HUP nginx`,
+      note: 'Run it from a timer. Without a terminal certbot waits a random time of up to 8 minutes first. The HUP signal makes NGINX reload the new files.'
     }
   ];
 }
@@ -1222,7 +1278,7 @@ export function deploySteps(input: Options): DeployStep[] {
       steps.push({
         title: 'Create the folders for certificates and challenges',
         command: 'mkdir -p tls acme-challenge letsencrypt',
-        note: `The challenge folder is mounted read-only at ${acmeWebroot(o)}.`
+        note: `The challenge folder is mounted read-only at ${acmeWebroot(o)}, and tls at ${CONTAINER_CERTIFICATE_ROOT}.`
       });
     }
 
@@ -1237,7 +1293,11 @@ export function deploySteps(input: Options): DeployStep[] {
       );
     }
 
-    steps.push({ title: 'Test the config', command: `docker run --rm --entrypoint nginx -v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro" ${NGINX_IMAGE} -t` });
+    steps.push({
+      title: 'Test the config',
+      command: containerTestCommand(o),
+      note: 'It uses the same user, mounts, and writable paths as the run command below.'
+    });
     steps.push({
       title: 'Start the container',
       command: containerRunCommand(o),

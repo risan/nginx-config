@@ -64,9 +64,11 @@ NGINX_SERVER_NAME=localhost \
 docker compose up --build nginx
 ~~~
 
-The mounted configuration must be made for the **Container** target (not Server
-or VM: that one binds port 80 and writes under `/var/log`). It listens on 8080 and uses
-`/usr/share/nginx/html` for static content. The two mounts replace the image
+The mounted configuration must be made for the **Container** target, with HTTPS
+off and a server name equal to `NGINX_SERVER_NAME`. `sites-example/container.conf`
+is an SPA for `localhost`. A config for the Server or VM target will not start
+here: it binds port 80 and writes under `/var/log`. The config listens on 8080
+and uses `/usr/share/nginx/html` for static content. The two mounts replace the image
 defaults at `/etc/nginx/nginx.conf` and `/usr/share/nginx/html`. Set
 `NGINX_SERVER_NAME` to the mounted configuration's `server_name`; `localhost`
 is the local example used by the health check.
@@ -79,11 +81,16 @@ configuration's `server_name`; this lets the local health check send the right
 TLS SNI. The mounted directory and files must be readable by UID 101:
 
 ~~~bash
-NGINX_TLS_CONFIG=./nginx.tls.conf \
+NGINX_TLS_CONFIG=./sites-example/container-ssl.conf \
 NGINX_TLS_CERTS=./ssl \
 NGINX_TLS_SERVER_NAME=example.com \
 docker compose --profile tls up --build nginx-tls
 ~~~
+
+`sites-example/container-ssl.conf` expects `./ssl/example.com/fullchain.pem` and
+`./ssl/example.com/privkey.pem`. `scripts/smoke-compose.mjs` runs both Compose
+commands of this page (the HTTP and the TLS service) and checks that they become
+healthy.
 
 The default HTTP service stays on 8080. Do not mount production private keys
 unless the host permissions and the TLS configuration have been reviewed.

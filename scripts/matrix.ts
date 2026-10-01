@@ -11,7 +11,7 @@ const PROFILES: Profile[] = ['static', 'spa', 'php', 'proxy'];
 const TARGETS: Target[] = ['host', 'container'];
 const HTTPS_MODES = ['off', 'manual', 'acme'] as const;
 
-export const TEST_CERTIFICATE_DIRECTORY = '/tmp/nginx-config-tls';
+export const TEST_CERTIFICATE_DIRECTORY = '/etc/nginx/tls';
 
 const HTTPS_SETTINGS = {
   off: {},

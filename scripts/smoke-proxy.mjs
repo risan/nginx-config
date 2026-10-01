@@ -4,11 +4,13 @@
 // connection reuse, WebSocket scoping, failover, and real-IP spoofing protection.
 import http from 'node:http';
 import net from 'node:net';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { generateConfig } from '../lib/render.ts';
 import { defaultsFor } from '../lib/options.ts';
-import { assert, countHeader, createSmoke, echoBackendConfig, parseEcho, request, runSmoke, sleep } from './smoke-kit.mjs';
+import { assert, countHeader, createSmoke, echoBackendConfig, parseEcho, request, runSmoke, sleep, webSocketEcho } from './smoke-kit.mjs';
 
 const smoke = createSmoke('proxy');
 
@@ -31,9 +33,14 @@ await runSmoke(smoke, async () => {
   smoke.createNetwork();
   smoke.startNginx({ containerName: 'backend', config: echoBackendConfig(), alias: 'backend' });
 
+  // The webroot that certbot would write to. A token file there must stay reachable next to /ws/ and /events/.
+  const webroot = join(smoke.workdir, 'acme-challenge');
+  mkdirSync(join(webroot, '.well-known', 'acme-challenge'), { recursive: true });
+  writeFileSync(join(webroot, '.well-known', 'acme-challenge', 'token-1'), 'challenge-ok', 'utf8');
   const single = smoke.startNginx({
     containerName: 'single',
-    config: proxyConfig({ upstreams: [{ address: 'backend:8081', backup: false }], websocketPath: '/ws/' }),
+    config: proxyConfig({ upstreams: [{ address: 'backend:8081', backup: false }], websocketPath: '/ws/', streamingPath: '/events/' }),
+    mounts: [[webroot, '/var/cache/nginx/acme-challenge']],
     publish: [8080]
   });
   const failover = smoke.startNginx({
@@ -84,12 +91,52 @@ await runSmoke(smoke, async () => {
   const elsewhere = (await echo(singlePort, { path: '/api', headers: { Connection: 'Upgrade', Upgrade: 'websocket' }, agent: false })).fields;
   assert(elsewhere.upgrade === '' && elsewhere.connection === '', 'an Upgrade header reached the backend outside the WebSocket path');
 
+  // Review 1: the challenge folder is served from the webroot, not proxied, even with WebSocket and streaming paths set.
+  const challenge = await request({ port: singlePort, host: 'example.com', path: '/.well-known/acme-challenge/token-1' });
+  assert(challenge.status === 200 && challenge.body.toString('utf8') === 'challenge-ok', `the ACME challenge was not served from the webroot: ${challenge.status} ${challenge.body.toString('utf8').slice(0, 60)}`);
+  assert((await request({ port: singlePort, host: 'example.com', path: '/.well-known/acme-challenge/missing' })).status === 404, 'a missing token must be a 404 from NGINX, not a backend answer');
+
+  // Review 2: dotfiles under the WebSocket and streaming paths are denied at the edge and never reach the backend.
+  for (const path of ['/ws/.git/config', '/events/.env', '/ws/a/.hidden']) {
+    const denied = await request({ port: singlePort, host: 'example.com', path });
+    assert(denied.status === 403, `${path} returned ${denied.status} instead of 403`);
+    assert(!denied.body.toString('utf8').includes('host='), `${path} reached the backend`);
+  }
+
   // A5/B2: the health check has no Content-Length and one copy of each security header.
   const health = await request({ port: singlePort, path: '/healthz', host: 'example.com' });
   assert(health.status === 204 && !('content-length' in health.headers), 'healthz sent Content-Length');
   for (const header of ['X-Content-Type-Options', 'Referrer-Policy', 'X-Frame-Options', 'Content-Security-Policy']) {
     assert(countHeader(health, header) === 1, `${header} appears ${countHeader(health, header)} times on /healthz`);
   }
+
+  // Review 8: a real WebSocket through the WebSocket path: handshake (101) and an echoed frame.
+  const script = new URL('./ws-echo-server.mjs', import.meta.url).pathname;
+  smoke.startContainer('wsbackend', [
+    '--network-alias', 'wsbackend', '--mount', `type=bind,src=${script},dst=/app/server.mjs,readonly`,
+    'node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1', 'node', '/app/server.mjs'
+  ]);
+  const websocketEdge = smoke.startNginx({
+    containerName: 'edge-websocket',
+    config: proxyConfig({ upstreams: [{ address: 'wsbackend:8082', backup: false }], websocketPath: '/ws/' }),
+    publish: [8080]
+  });
+  const websocketPort = await smoke.port(websocketEdge, 8080);
+  await smoke.waitFor({ port: websocketPort, path: '/healthz', host: 'example.com' }, 204, 'WebSocket edge');
+  let handshake = { statusLine: '', echoed: '' };
+  for (let attempt = 0; attempt < 50 && handshake.echoed === ''; attempt += 1) {
+    handshake = await webSocketEcho({ port: websocketPort, path: '/ws/chat', host: 'example.com', text: 'hello through nginx' }).catch(() => handshake);
+    if (handshake.echoed === '') {
+      await sleep(200);
+    }
+  }
+
+  assert(handshake.statusLine.includes(' 101 '), `no 101 handshake through the WebSocket path: ${handshake.statusLine}`);
+  assert(handshake.echoed === 'echo:hello through nginx', `the WebSocket frame was not echoed through NGINX: ${handshake.echoed}`);
+  const normal = await request({ port: websocketPort, host: 'example.com', path: '/ws/plain' });
+  assert(normal.status === 200 && normal.body.toString('utf8') === 'plain:/ws/plain', 'a normal request to the WebSocket path no longer reaches the backend');
+  const outside = await webSocketEcho({ port: websocketPort, path: '/chat', host: 'example.com' });
+  assert(!outside.statusLine.includes(' 101 '), 'a WebSocket handshake outside the WebSocket path was upgraded');
 
   // Failover: one dead server and one healthy server, so every request still succeeds.
   for (let index = 0; index < 8; index += 1) {
@@ -238,6 +285,6 @@ http {
   });
   assert(/^HTTP\/1\.1 204/.test(proxied), `a request with the PROXY header failed: ${proxied.slice(0, 80)}`);
 
-  process.stdout.write('PASS proxy identity, upstream keepalive, WebSocket scope, healthz headers, failover, real-IP trust, alias redirect Locations, and PROXY-protocol health probe\n');
+  process.stdout.write('PASS proxy identity, upstream keepalive, WebSocket scope, healthz headers, failover, real-IP trust, alias redirect Locations, PROXY-protocol health probe, challenge folder, dotfiles under proxied paths, and a real WebSocket\n');
 });
 

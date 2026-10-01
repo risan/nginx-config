@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
+import net from 'node:net';
+import { createHash } from 'node:crypto';
 
 import { NGINX_IMAGE } from '../lib/version.ts';
 
@@ -116,6 +118,10 @@ export function createSmoke(name, image = process.argv[2] ?? process.env.NGINX_I
       run('docker', args);
 
       return fullName;
+    },
+
+    trackContainer(fullName) {
+      containers.push(fullName);
     },
 
     startContainer(containerName, args) {
@@ -228,4 +234,55 @@ export function parseEcho(body) {
   }
 
   return fields;
+}
+
+// A real WebSocket client: handshake, one masked text frame, and the echoed frame.
+// Returns the status line of the handshake answer and the text that came back (empty when there was no 101).
+export function webSocketEcho({ port, path, host = 'localhost', text = 'hello' }) {
+  return new Promise((resolve, reject) => {
+    const key = Buffer.from('smoke-test-key-16').toString('base64');
+    const socket = net.connect(port, '127.0.0.1');
+    let received = Buffer.alloc(0);
+    let upgraded = false;
+    let statusLine = '';
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`WebSocket echo timed out (status: ${statusLine || 'none'})`));
+    }, 10000);
+    const finish = (result) => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.on('error', reject);
+    socket.on('connect', () => {
+      socket.write(`GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ${key}\r\n\r\n`);
+    });
+    socket.on('data', (chunk) => {
+      received = Buffer.concat([received, chunk]);
+      const headerEnd = received.indexOf('\r\n\r\n');
+      if (!upgraded && headerEnd >= 0) {
+        const head = received.subarray(0, headerEnd).toString('utf8');
+        statusLine = head.split('\r\n')[0];
+        const expected = createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
+        if (!statusLine.includes(' 101 ') || !head.includes(`Sec-WebSocket-Accept: ${expected}`)) {
+          finish({ statusLine, echoed: '' });
+
+          return;
+        }
+
+        upgraded = true;
+        received = received.subarray(headerEnd + 4);
+        const payload = Buffer.from(text);
+        const mask = Buffer.from([1, 2, 3, 4]);
+        const masked = Buffer.from(payload.map((byte, index) => byte ^ mask[index % 4]));
+        socket.write(Buffer.concat([Buffer.from([0x81, 0x80 | payload.length]), mask, masked]));
+      }
+
+      if (upgraded && received.length >= 2 && received.length >= 2 + (received[1] & 0x7f)) {
+        finish({ statusLine, echoed: received.subarray(2, 2 + (received[1] & 0x7f)).toString('utf8') });
+      }
+    });
+  });
 }

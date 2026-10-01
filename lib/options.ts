@@ -233,10 +233,42 @@ function defaultDocumentRoot(target: Target, serverName: string): string {
   return target === 'host' ? `/var/www/${serverName}/public` : '/usr/share/nginx/html';
 }
 
-function defaultCertificatePaths(target: Target, serverName: string): { certificatePath: string; certificateKeyPath: string } {
-  const directory = target === 'host' ? `/etc/letsencrypt/live/${serverName}` : `/etc/nginx/tls/${serverName}`;
+// The certbot lineage name. The canonical name comes first in every certbot command, so it is the one name
+// the certificate paths can rely on.
+export function certificateName(o: Pick<ResolvedOptions, 'serverName' | 'wwwRedirect'>): string {
+  return canonicalServerName(o);
+}
+
+export const CONTAINER_CERTIFICATE_ROOT = '/etc/nginx/tls';
+
+function defaultCertificatePaths(target: Target, name: string): { certificatePath: string; certificateKeyPath: string } {
+  const directory = target === 'host' ? `/etc/letsencrypt/live/${name}` : `${CONTAINER_CERTIFICATE_ROOT}/${name}`;
 
   return { certificatePath: `${directory}/fullchain.pem`, certificateKeyPath: `${directory}/privkey.pem` };
+}
+
+const WWW_REDIRECTS = ['off', 'to-apex', 'to-www'];
+
+/**
+ * Every default that follows the profile, the target, the server name, or the www redirect.
+ * The UI calls this after one of those four changes and applies the result to fields the user has not edited.
+ */
+export function derivedDefaults(o: Options): Partial<Options> {
+  const serverName = typeof o.serverName === 'string' ? o.serverName.toLowerCase() : 'example.com';
+  const wwwRedirect = WWW_REDIRECTS.includes(o.wwwRedirect as string) ? (o.wwwRedirect as ResolvedOptions['wwwRedirect']) : 'off';
+  const base = defaultsFor(o.profile, o.target);
+  const name = certificateName({ serverName, wwwRedirect });
+
+  return {
+    documentRoot: defaultDocumentRoot(o.target, serverName),
+    ...defaultCertificatePaths(o.target, name),
+    upstreams: base.upstreams,
+    httpPort: base.httpPort,
+    httpsPort: base.httpsPort,
+    ipv6: base.ipv6,
+    workerConnections: base.workerConnections,
+    resolver: base.resolver
+  };
 }
 
 function defaultUpstreams(profile: Profile, target: Target): Upstream[] {
@@ -350,9 +382,20 @@ function hasDotSegment(path: string): boolean {
   return path.split('/').some((part) => part === '.' || part === '..');
 }
 
+const ACME_CHALLENGE_PREFIX = '/.well-known/acme-challenge/';
+
+// A prefix location matches by string prefix, so a path above, equal to, or below the challenge
+// folder would take challenge requests away from the HTTP-01 location.
+function overlapsAcmeChallenge(path: string): boolean {
+  return ACME_CHALLENGE_PREFIX.startsWith(path) || path.startsWith(ACME_CHALLENGE_PREFIX.slice(0, -1));
+}
+
 function validateUriPrefix(value: string, label: string): string | null {
   if (value === '/' || !URI_PREFIX_PATTERN.test(value) || value.includes('//') || hasDotSegment(value)) {
     return `${label} must start with / and use letters, digits, dots, dashes, or slashes. It cannot be / alone.`;
+  }
+  if (overlapsAcmeChallenge(value)) {
+    return `${label} cannot overlap ${ACME_CHALLENGE_PREFIX}, which is reserved for certificate challenges.`;
   }
 
   return null;
@@ -1115,8 +1158,9 @@ function validateImmutablePaths(value: unknown, errors: Record<string, string>):
   const seen = new Set<string>();
   (value as string[]).forEach((path, index) => {
     const key = `immutablePaths.${index}`;
-    if (!path.endsWith('/') || !path.startsWith('/') || validateUriPrefix(path, 'The path')) {
-      setError(errors, key, 'Start and end with /, use only letters, digits, dots, dashes, and slashes, and do not use / alone.');
+    const problem = validateUriPrefix(path, 'The path');
+    if (!path.endsWith('/') || !path.startsWith('/') || problem) {
+      setError(errors, key, problem?.includes('reserved') ? problem : 'Start and end with /, use only letters, digits, dots, dashes, and slashes, and do not use / alone.');
     } else if (seen.has(path)) {
       setError(errors, key, 'This path is listed twice.');
     } else {
@@ -1167,7 +1211,8 @@ function mergeInput(input: Record<string, unknown>, profile: Profile, target: Ta
     merged.documentRoot = defaultDocumentRoot(target, serverName);
   }
 
-  const certificates = defaultCertificatePaths(target, serverName);
+  const wwwRedirect = WWW_REDIRECTS.includes(merged.wwwRedirect as string) ? (merged.wwwRedirect as ResolvedOptions['wwwRedirect']) : 'off';
+  const certificates = defaultCertificatePaths(target, certificateName({ serverName, wwwRedirect }));
   if (!hasOwn(input, 'certificatePath')) {
     merged.certificatePath = certificates.certificatePath;
   }
@@ -1180,6 +1225,14 @@ function mergeInput(input: Record<string, unknown>, profile: Profile, target: Ta
 
 function validateRelationships(o: ResolvedOptions, errors: Record<string, string>, failed: (key: string) => boolean): void {
   const applies = (key: string) => !failed(key) && SPECS.find((spec) => spec.key === key)!.appliesTo(o);
+
+  if (o.target === 'container' && o.https === 'manual') {
+    for (const key of ['certificatePath', 'certificateKeyPath'] as const) {
+      if (!failed(key) && !o[key].startsWith(`${CONTAINER_CERTIFICATE_ROOT}/`)) {
+        setError(errors, key, `In a container, certificate files must be under ${CONTAINER_CERTIFICATE_ROOT}/, the folder you mount.`);
+      }
+    }
+  }
 
   if (applies('httpsPort') && o.httpsPort === o.httpPort) {
     setError(errors, 'httpsPort', 'The HTTPS port must differ from the HTTP port.');

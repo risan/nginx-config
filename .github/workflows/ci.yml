@@ -98,6 +98,10 @@ jobs:
         run: node scripts/smoke-http3.mjs nginx-config:ci
       - name: Exercise DNS re-resolution of a replaced backend
         run: node scripts/smoke-resolve.mjs nginx-config:ci
+      - name: Exercise the printed certbot bootstrap for containers
+        run: node scripts/smoke-bootstrap.mjs nginx-config:ci
+      - name: Exercise the documented Compose commands
+        run: node scripts/smoke-compose.mjs
       - name: Issue a certificate from a local Pebble ACME server
         run: node scripts/smoke-acme.mjs nginx-config:ci
       - name: Validate Compose definition

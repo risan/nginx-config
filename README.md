@@ -122,8 +122,11 @@ docker compose up --build nginx
 
 The full file replaces `/etc/nginx/nginx.conf`; the content mount replaces
 `/usr/share/nginx/html`. Set `NGINX_SERVER_NAME` to the mounted configuration's
-`server_name`. A config made for the Server or VM target will not start in the
-non-root image, because it binds port 80 and writes under `/var/log`.
+`server_name` (`sites-example/container.conf` is an HTTP-only SPA for
+`localhost`). A config made for the Server or VM target will not start in the
+non-root image, because it binds port 80 and writes under `/var/log`. The TLS
+Compose service uses `sites-example/container-ssl.conf`; see
+[operations](docs/operations.md).
 
 ```bash
 docker build -t nginx-config:local .
@@ -192,7 +195,7 @@ permissions, log ownership, and module packages. The file includes
 | Choice | How it works |
 | --- | --- |
 | Off | HTTP only. |
-| My own certificate files | You issue and renew the certificate (for example with certbot). NGINX will not start the TLS server without the files, so deploy the config with HTTPS **Off** first, run `certbot certonly --webroot` against the challenge folder, then switch to this choice. The HTTP server (also with HTTPS off, in every profile, and for the www alias) answers `/.well-known/acme-challenge/` from `/var/www/_letsencrypt` (a container: `/var/cache/nginx/acme-challenge`, mounted from the host) before it redirects or proxies. Renewals use the same location. The Deploy tab prints every command. |
+| My own certificate files | You issue and renew the certificate (for example with certbot). NGINX will not start the TLS server without the files, so deploy the config with HTTPS **Off** first, run `certbot certonly --webroot` against the challenge folder, then switch to this choice. The HTTP server (also with HTTPS off, in every profile, and for the www alias) answers `/.well-known/acme-challenge/` from `/var/www/_letsencrypt` (a container: `/var/cache/nginx/acme-challenge`, mounted from the host) before it redirects or proxies. Renewals use the same location. The Deploy tab prints every command, including `--cert-name` (always the canonical name, so the default paths match), the copy to your configured paths, and for a container a root-run install step that gives the key to group 101 with mode 640. In a container the certificate files must live under `/etc/nginx/tls/`, the folder you mount. |
 | Automatic | The official [NGINX ACME module](https://nginx.org/en/docs/http/ngx_http_acme_module.html) gets and renews Let's Encrypt certificates (HTTP-01 only, no DNS-01). Port 80 must be reachable from the internet and a resolver must work. In a container, mount a persistent volume at `/var/cache/nginx` owned by UID 101. The module is a separate package on a server (`nginx-module-acme`, since NGINX 1.29.1) and is already in the official Docker image. A local test with Pebble covers this path. |
 
 The TLS policy follows the Mozilla/TLSRef guideline v6.0: **Intermediate** is

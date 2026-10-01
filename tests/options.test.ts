@@ -8,6 +8,7 @@ import {
   SCHEMA_VERSION,
   TARGETS,
   defaultsFor,
+  derivedDefaults,
   validateOptions,
   type Options,
   type Profile,
@@ -360,4 +361,70 @@ test('appliesTo follows profile, target, and dependent options', () => {
   assert.equal(applies('proxyCache', proxyOptions), true);
   assert.equal(applies('fastcgiCache', proxyOptions), false);
   assert.equal(applies('fastcgiCache', defaultsFor('php', 'host') as Options), true);
+});
+
+test('review 1: the ACME challenge folder is reserved across WebSocket, streaming, and immutable paths', () => {
+  const overlapping = ['/.well-known/acme-challenge/', '/.well-known/acme-challenge/a', '/.well-known/acme-challenge', '/.well-known/', '/.well-known', '/.well-known/acme', '/.'];
+  for (const path of overlapping) {
+    assert.equal(proxy({ websocketPath: path }).valid, false, `websocketPath ${path}`);
+    assert.equal(proxy({ streamingPath: path }).valid, false, `streamingPath ${path}`);
+    if (path.endsWith('/')) {
+      const result = check('spa', 'host', { immutablePaths: ['/assets/', path] });
+      assert.equal(result.valid, false, `immutablePaths ${path}`);
+      assert.match(result.errors['immutablePaths.1'] ?? '', /reserved/);
+    }
+  }
+
+  assert.match(proxy({ websocketPath: '/.well-known/acme-challenge/' }).errors.websocketPath ?? '', /reserved/);
+  assert.equal(proxy({ websocketPath: '/.well-known-app/' }).valid, true);
+  assert.equal(proxy({ websocketPath: '/ws/', streamingPath: '/events/' }).valid, true);
+  assert.equal(check('spa', 'host', { immutablePaths: ['/assets/', '/well-known/'] }).valid, true);
+});
+
+test('review 3: certificate defaults follow the canonical name in both www directions', () => {
+  const lineage = (wwwRedirect: string, target: Target) =>
+    validateOptions({ profile: 'static', target, serverName: 'example.com', wwwRedirect, https: 'manual' }).options?.certificatePath;
+  assert.equal(lineage('off', 'host'), '/etc/letsencrypt/live/example.com/fullchain.pem');
+  assert.equal(lineage('to-apex', 'host'), '/etc/letsencrypt/live/example.com/fullchain.pem');
+  assert.equal(lineage('to-www', 'host'), '/etc/letsencrypt/live/www.example.com/fullchain.pem');
+  assert.equal(lineage('to-www', 'container'), '/etc/nginx/tls/www.example.com/fullchain.pem');
+  const typedWww = validateOptions({ profile: 'static', target: 'host', serverName: 'www.example.com', wwwRedirect: 'to-apex', https: 'manual' });
+  assert.equal(typedWww.options?.certificateKeyPath, '/etc/letsencrypt/live/example.com/privkey.pem');
+});
+
+test('review 3: derivedDefaults returns every default that follows the name, redirect, profile, or target', () => {
+  const derived = derivedDefaults({ ...defaultsFor('proxy', 'container'), serverName: 'Shop.Example.org', wwwRedirect: 'to-www' } as Options);
+  assert.deepEqual(derived, {
+    documentRoot: '/usr/share/nginx/html',
+    certificatePath: '/etc/nginx/tls/www.shop.example.org/fullchain.pem',
+    certificateKeyPath: '/etc/nginx/tls/www.shop.example.org/privkey.pem',
+    upstreams: [{ address: '127.0.0.1:3000', backup: false }],
+    httpPort: 8080,
+    httpsPort: 8443,
+    ipv6: false,
+    workerConnections: 1024,
+    resolver: '127.0.0.11'
+  });
+  const host = derivedDefaults({ ...defaultsFor('php', 'host'), serverName: 'example.com' } as Options);
+  assert.equal(host.documentRoot, '/var/www/example.com/public');
+  assert.equal(host.httpPort, 80);
+  assert.deepEqual(host.upstreams, [{ address: 'unix:/run/php/php-fpm.sock', backup: false }]);
+  assert.deepEqual(derivedDefaults({ profile: 'static', target: 'host' } as Options).certificatePath, '/etc/letsencrypt/live/example.com/fullchain.pem');
+  for (const [profile, target] of combinations) {
+    const defaults = defaultsFor(profile, target);
+    const fromDefaults = derivedDefaults(defaults as Options);
+    for (const [key, value] of Object.entries(fromDefaults)) {
+      assert.deepEqual(defaults[key as keyof typeof defaults], value, `${profile}/${target} ${key}`);
+    }
+  }
+});
+
+test('review 4: container certificates must live under the mounted folder', () => {
+  const container = (overrides: Record<string, unknown>) => check('static', 'container', { https: 'manual', ...overrides });
+  assert.equal(container({}).valid, true);
+  assert.equal(container({ certificatePath: '/etc/nginx/tls/a/cert.pem', certificateKeyPath: '/etc/nginx/tls/b/key.pem' }).valid, true);
+  assert.equal(container({ certificatePath: '/srv/cert.pem' }).errors.certificatePath !== undefined, true);
+  assert.equal(container({ certificateKeyPath: '/etc/nginx/other/key.pem' }).errors.certificateKeyPath !== undefined, true);
+  assert.equal(check('static', 'host', { https: 'manual', certificatePath: '/srv/cert.pem', certificateKeyPath: '/srv/key.pem' }).valid, true);
+  assert.equal(container({ https: 'off', certificatePath: '/srv/cert.pem' }).valid, true);
 });

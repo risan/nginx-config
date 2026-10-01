@@ -23,7 +23,7 @@ services:
     # The image includes a small static welcome site. For a generated profile,
     # mount the complete renderer output and your application content instead.
     # Use a config made for the "Container" target (ports 8080 and 8443, logs to
-    # stdout), such as sites-example/container.conf or one from the web builder:
+    # stdout), such as sites-example/container.conf (SPA, HTTP only, server name localhost) or one from the web builder:
     #
     #   NGINX_CONFIG=./sites-example/container.conf \
     #   NGINX_CONTENT=./public \
@@ -49,7 +49,7 @@ services:
   #
   # The mounted configuration must be a "Container" target config with HTTPS
   # set to your own certificate files (it listens on 8443). Its certificate
-  # paths must be under /etc/nginx/tls, for example sites-example/container.conf.
+  # paths must be under /etc/nginx/tls, for example sites-example/container-ssl.conf (certificates in ./ssl/example.com/).
   # Set NGINX_TLS_SERVER_NAME to the same name as the mounted config's
   # server_name so the local health check sends the right TLS SNI. The certificate directory and files must be readable by UID 101.
   # The default NGINX runtime remains HTTP-only.

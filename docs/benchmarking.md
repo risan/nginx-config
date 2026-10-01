@@ -73,17 +73,23 @@ node scripts/smoke-static.mjs nginx-config:local # headers once, immutable asset
 node scripts/smoke-tls.mjs nginx-config:local    # redirect to the public port, h2, HSTS, resumption
 node scripts/smoke-http3.mjs nginx-config:local  # QUIC listener, a real HTTP/3 request (200 + Alt-Svc), TCP fallback
 node scripts/smoke-acme.mjs nginx-config:local   # Pebble: canonical + alias certificates, restart reuses them
-node scripts/smoke-resolve.mjs nginx-config:local # backend replaced, new IP, no reload (about 35 s)
+node scripts/smoke-resolve.mjs nginx-config:local # backend replaced, new IP, no reload (about 5 s)
+node scripts/smoke-bootstrap.mjs nginx-config:local # the printed certbot bootstrap, run from an empty folder (Pebble)
+node scripts/smoke-compose.mjs                   # the README Compose commands, HTTP and TLS service
 ~~~
 
 `smoke-http3.mjs` makes the HTTP/3 request with a curl that supports it (the
-`ymuski/curl-http3` image by default, `HTTP3_CURL_IMAGE` to change it) and fails
-without one; `ALLOW_NO_HTTP3_CLIENT=1` reduces it to the UDP listener and
-Alt-Svc checks on a machine that cannot pull a client. `smoke-acme.mjs` pulls `ghcr.io/letsencrypt/pebble`
+`ymuski/curl-http3` image pinned by digest, `HTTP3_CURL_IMAGE` to change it) and
+always fails without one. `scripts/diagnose-http3-listener.mjs` is a separate,
+diagnostic-only command (UDP listener and Alt-Svc, no HTTP/3 request) and does
+not count as qualification. `smoke-proxy.mjs` also performs a real WebSocket
+handshake (101) and frame echo against a small Node backend. `smoke-acme.mjs` pulls `ghcr.io/letsencrypt/pebble`
 and its test DNS server, and needs a free private subnet (random 10.x.x.0/24 by
 default, `SMOKE_ACME_SUBNET` to set one). `smoke-resolve.mjs` replaces the
 backend container behind a Docker network alias and waits for NGINX to follow
-the new address by itself (the resolver's `valid=30s` sets the delay).
+the new address by itself. The generated config uses `valid=30s`; the test
+shortens it to `valid=1s` so the switch shows within seconds (about 5 s, mostly
+one 5 s connect timeout to the old address).
 
 Run the generated and hand-edited files through the same NGINX package that will
 serve them:

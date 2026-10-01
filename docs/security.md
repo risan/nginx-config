@@ -198,8 +198,11 @@ one of those ranges, and anything malformed falls back to the real scheme. The
 public ports (`publicHttpPort`, `publicHttpsPort`) feed `X-Forwarded-Port`,
 redirects, PHP's `SERVER_PORT`, and cache keys. Test both a request through the
 trusted hop and a direct request that forges the header
-(`scripts/smoke-proxy.mjs` does both). With the PROXY protocol, `/healthz` and
-ACME challenges are reachable only through the proxy.
+(`scripts/smoke-proxy.mjs` does both). With the PROXY protocol, the public
+listener rejects requests without the PROXY header, so ACME challenges and
+public health checks work only through the proxy. The config adds a plain
+`listen 127.0.0.1:<http port>` for `/healthz`, so the container health probe on
+127.0.0.1 keeps working.
 
 ## Upstream TLS
 

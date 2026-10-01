@@ -7,44 +7,14 @@ import { spawnSync } from 'node:child_process';
 import { deploySteps, generateConfig } from '../lib/render.ts';
 import { defaultsFor } from '../lib/options.ts';
 import { assert, createSmoke, run, runSmoke, sleep, request } from './smoke-kit.mjs';
+import { startPebble } from './pebble-fixture.mjs';
 
-const PEBBLE_IMAGE = process.env.PEBBLE_IMAGE ?? 'ghcr.io/letsencrypt/pebble:latest';
-const CHALLENGE_IMAGE = process.env.PEBBLE_CHALLTESTSRV_IMAGE ?? 'ghcr.io/letsencrypt/pebble-challtestsrv:latest';
 const DOMAIN = 'acme.test';
 
 const smoke = createSmoke('acme');
 
-// Pebble resolves the test domain through challtestsrv, which needs the edge address up front.
-// So the network gets a fixed subnet. A random 10.x range avoids clashing with other networks.
-function createNetworkWithFixedSubnet() {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const subnet = process.env.SMOKE_ACME_SUBNET ?? `10.${200 + Math.floor(Math.random() * 50)}.${Math.floor(Math.random() * 250)}.0/24`;
-    try {
-      smoke.createNetwork(['--subnet', subnet]);
-
-      return subnet.replace(/\.0\/24$/, '');
-    } catch (error) {
-      if (process.env.SMOKE_ACME_SUBNET) {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error('could not find a free subnet for the ACME smoke network');
-}
-
 await runSmoke(smoke, async () => {
-  const prefix = createNetworkWithFixedSubnet();
-  const EDGE_IP = `${prefix}.10`;
-  const DNS_IP = `${prefix}.11`;
-  const PEBBLE_IP = `${prefix}.12`;
-
-  smoke.startContainer('dns', ['--ip', DNS_IP, CHALLENGE_IMAGE, '-defaultIPv6', '', '-defaultIPv4', EDGE_IP]);
-  const pebble = smoke.startContainer('pebble', [
-    '--ip', PEBBLE_IP, '--network-alias', 'pebble',
-    '-e', 'PEBBLE_VA_NOSLEEP=1', '-e', 'PEBBLE_VA_ALWAYS_VALID=0',
-    PEBBLE_IMAGE, '-config', 'test/config/pebble-config.json', '-dnsserver', `${DNS_IP}:8053`
-  ]);
+  const { edgeIp: EDGE_IP, pebble } = startPebble(smoke);
 
   const options = {
     ...defaultsFor('static', 'container'),

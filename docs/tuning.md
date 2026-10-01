@@ -283,13 +283,13 @@ location / {
 }
 ```
 
-The builder adds `resolve`, a `zone`, and an http-level `resolver` automatically
-when a backend address is a host name (not an IP address, `localhost`, or a unix
-socket). The `resolver` and `resolver_timeout 5s` sit inside the upstream block:
-tested on 1.30.5, a group does not take its `valid` or timeout from an http-level
-`resolver`, and with the default 30 second timeout a replaced backend was found
-only after about 30 seconds (`scripts/smoke-resolve.mjs`). Replace the resolver with the local platform resolver and do not trust a public
-resolver for private service names. A stale or unavailable resolver can turn a
+The builder adds `resolve`, a `zone`, a `resolver`, and `resolver_timeout 5s`
+inside the upstream block automatically when a backend address is a host name
+(not an IP address, `localhost`, or a unix socket). Keep them in the block:
+tested on 1.30.5, an upstream group does not take its `valid` or timeout from an
+http-level `resolver`, and a replaced backend was then found only after about 30
+seconds (`scripts/smoke-resolve.mjs`). Replace the resolver with the local
+platform resolver and do not trust a public resolver for private service names. A stale or unavailable resolver can turn a
 healthy upstream into request failures; monitor it before using dynamic names.
 On older NGINX builds, check the version before using `resolve`; a variable
 `proxy_pass` is a compatibility fallback, but its URI replacement rules differ

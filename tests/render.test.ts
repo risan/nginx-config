@@ -98,7 +98,7 @@ test('A1: the WebSocket maps clear Connection for normal requests', () => {
 
 test('A1/C12: only the WebSocket path gets upgrade headers and long timeouts', () => {
   const server = appServer(configFor('proxy', 'host', { websocketPath: '/ws/' }), 'example.com');
-  const websocket = location(server, '^~ /ws/');
+  const websocket = location(server, '/ws/');
   assert.ok(directive(websocket, 'proxy_set_header').includes('Upgrade $websocket_upgrade'));
   assert.ok(directive(websocket, 'proxy_set_header').includes('Connection $connection_upgrade'));
   assert.deepEqual(directive(websocket, 'proxy_read_timeout'), ['1h']);
@@ -112,14 +112,14 @@ test('A1/C12: only the WebSocket path gets upgrade headers and long timeouts', (
 
 test('C12: the streaming path turns buffering off for that path only', () => {
   const server = appServer(configFor('proxy', 'host', { streamingPath: '/events/' }), 'example.com');
-  assert.deepEqual(directive(location(server, '^~ /events/'), 'proxy_buffering'), ['off']);
-  assert.deepEqual(directive(location(server, '^~ /events/'), 'proxy_read_timeout'), ['1h']);
+  assert.deepEqual(directive(location(server, '/events/'), 'proxy_buffering'), ['off']);
+  assert.deepEqual(directive(location(server, '/events/'), 'proxy_read_timeout'), ['1h']);
   assert.deepEqual(directive(location(server, '/'), 'proxy_buffering'), []);
 });
 
 test('proxy locations repeat the full header set and clear spoofable headers', () => {
   const server = appServer(configFor('proxy', 'host', { websocketPath: '/ws/', streamingPath: '/events/' }), 'example.com');
-  for (const path of ['/', '^~ /ws/', '^~ /events/']) {
+  for (const path of ['/', '/ws/', '/events/']) {
     const headers = directive(location(server, path), 'proxy_set_header');
     for (const expected of ['Host $host', 'X-Real-IP $remote_addr', 'X-Forwarded-For $remote_addr', 'X-Forwarded-Host $host', 'X-Request-ID $request_id', 'Forwarded ""', 'Proxy ""', 'X-Client-IP ""']) {
       assert.ok(headers.includes(expected), `${path} lacks ${expected}`);
@@ -494,7 +494,7 @@ test('B9/C3: client_max_body_size is always visible', () => {
 test('R4: rate limits cover every dynamic location and never static files', () => {
   const config = configFor('proxy', 'host', { rateLimit: 'on', websocketPath: '/ws/', streamingPath: '/events/' });
   const server = appServer(config, 'example.com');
-  for (const path of ['/', '^~ /ws/', '^~ /events/']) {
+  for (const path of ['/', '/ws/', '/events/']) {
     assert.deepEqual(directive(location(server, path), 'limit_req'), ['zone=per_ip burst=20 nodelay'], path);
   }
 
@@ -848,7 +848,7 @@ test('R7/R20: deploy steps define the certificate bootstrap and the container vo
   assert.match(manualHost[0]!.note!, /set HTTPS to Off/);
   assert.equal(manualHost.find((step) => step.title === 'Create the challenge folder')!.command, 'sudo mkdir -p /var/www/_letsencrypt');
   const first = manualHost.find((step) => step.title === 'Get the first certificate')!;
-  assert.equal(first.command, 'sudo certbot certonly --webroot -w /var/www/_letsencrypt -d example.com -d www.example.com');
+  assert.equal(first.command, 'sudo certbot certonly --webroot -w /var/www/_letsencrypt --cert-name example.com -d example.com -d www.example.com');
   assert.ok(names.indexOf('Reload NGINX') < names.indexOf('Get the first certificate'), 'certbot runs after the HTTPS-off config is live');
   assert.ok(names.indexOf('Get the first certificate') < names.findIndex((title) => title.startsWith('Switch HTTPS')));
   assert.ok(names.findIndex((title) => title.startsWith('Switch HTTPS')) < names.indexOf('Renew certificates and reload NGINX'));
@@ -866,7 +866,7 @@ test('R7/R20: deploy steps define the certificate bootstrap and the container vo
   const start = manualContainer.find((step) => step.title === 'Start the container')!.command!;
   assert.match(start, /-v "\$PWD\/tls:\/etc\/nginx\/tls:ro"/);
   assert.match(start, /-v "\$PWD\/acme-challenge:\/var\/cache\/nginx\/acme-challenge:ro"/);
-  assert.match(manualContainer.find((step) => step.title === 'Get the first certificate')!.command!, /certbot\/certbot certonly --webroot -w \/acme -d example\.com/);
+  assert.match(manualContainer.find((step) => step.title === 'Get the first certificate')!.command!, /certbot\/certbot certonly --webroot -w \/acme --cert-name example\.com -d example\.com/);
 
   const acmeContainer = deploySteps({ ...defaultsFor('proxy', 'container'), ...ACME, http3: true } as Options);
   const volume = acmeContainer.find((step) => step.title.startsWith('Create a volume'))!;
@@ -889,6 +889,82 @@ test('R7/R20: deploy steps define the certificate bootstrap and the container vo
     assert.ok(step.title.length > 0);
     assert.ok(step.command || step.note, step.title);
   }
+});
+
+test('review 3: the certbot lineage name matches the default certificate paths in both www directions', () => {
+  for (const [wwwRedirect, name, names] of [
+    ['off', 'example.com', '-d example.com'],
+    ['to-apex', 'example.com', '-d example.com -d www.example.com'],
+    ['to-www', 'www.example.com', '-d www.example.com -d example.com']
+  ] as const) {
+    for (const target of targets) {
+      const options = validateOptions({ profile: 'static', target, serverName: 'example.com', wwwRedirect, https: 'manual' }).options!;
+      const steps = deploySteps(options);
+      const first = steps.find((step) => step.title === 'Get the first certificate')!;
+      assert.match(first.command!, new RegExp(`--cert-name ${name.replaceAll('.', '\\.')} ${names.replaceAll('.', '\\.')}`));
+      const directory = target === 'host' ? `/etc/letsencrypt/live/${name}` : `/etc/nginx/tls/${name}`;
+      assert.equal(options.certificatePath, `${directory}/fullchain.pem`);
+      if (target === 'host') {
+        assert.ok(!steps.some((step) => step.title.startsWith('Install the certificate')), 'default certbot paths need no copy');
+        assert.equal(steps.find((step) => step.title.startsWith('Renew'))!.command, 'sudo certbot renew --deploy-hook "systemctl reload nginx"');
+      } else {
+        assert.match(steps.find((step) => step.title.startsWith('Install the certificate'))!.command!, new RegExp(`/le/live/${name.replaceAll('.', '\\.')}/fullchain\\.pem /tls/${name.replaceAll('.', '\\.')}/fullchain\\.pem`));
+      }
+    }
+  }
+});
+
+test('review 4: host and container deploy steps follow the configured certificate paths', () => {
+  const custom = { https: 'manual', certificatePath: '/srv/tls/site.crt', certificateKeyPath: '/srv/tls/site.key' };
+  const host = deploySteps({ ...defaultsFor('static', 'host'), ...custom } as Options);
+  const install = host.find((step) => step.title.startsWith('Install the certificate'))!;
+  assert.equal(install.command, 'sudo install -D -m 644 /etc/letsencrypt/live/example.com/fullchain.pem /srv/tls/site.crt && sudo install -D -m 600 /etc/letsencrypt/live/example.com/privkey.pem /srv/tls/site.key');
+  assert.equal(
+    host.find((step) => step.title.startsWith('Renew'))!.command,
+    'sudo certbot renew --deploy-hook "install -D -m 644 /etc/letsencrypt/live/example.com/fullchain.pem /srv/tls/site.crt && install -D -m 600 /etc/letsencrypt/live/example.com/privkey.pem /srv/tls/site.key && systemctl reload nginx"'
+  );
+  const order = host.map((step) => step.title);
+  assert.ok(order.findIndex((title) => title.startsWith('Get the first')) < order.findIndex((title) => title.startsWith('Install the certificate')));
+  assert.ok(order.findIndex((title) => title.startsWith('Install the certificate')) < order.findIndex((title) => title.startsWith('Switch HTTPS')));
+
+  const container = deploySteps({ ...defaultsFor('static', 'container'), https: 'manual', certificatePath: '/etc/nginx/tls/a/site.crt', certificateKeyPath: '/etc/nginx/tls/b/site.key' } as Options);
+  const containerInstall = container.find((step) => step.title.startsWith('Install the certificate'))!.command!;
+  assert.match(containerInstall, /mkdir -p \/tls\/a \/tls\/b/);
+  assert.match(containerInstall, /cp -L \/le\/live\/example\.com\/fullchain\.pem \/tls\/a\/site\.crt/);
+  assert.match(containerInstall, /cp -L \/le\/live\/example\.com\/privkey\.pem \/tls\/b\/site\.key/);
+  assert.match(containerInstall, /chown 0:101 \/tls\/b\/site\.key; chmod 640 \/tls\/b\/site\.key/);
+  assert.doesNotMatch(containerInstall, /chmod 64[4-7] \/tls\/b\/site\.key|chmod 666/);
+  assert.match(container.find((step) => step.title.startsWith('Renew'))!.command!, /renew && docker run .* -c 'set -e; mkdir -p \/tls\/a \/tls\/b/);
+});
+
+test('review 5: the container bootstrap is interactive and installs the key for group 101 only', () => {
+  const steps = deploySteps({ ...defaultsFor('static', 'container'), https: 'manual' } as Options);
+  const first = steps.find((step) => step.title === 'Get the first certificate')!;
+  assert.match(first.command!, /^docker run --rm -it /);
+  assert.match(first.note!, /--non-interactive --agree-tos -m you@example\.com --no-eff-email/);
+  const install = steps.find((step) => step.title.startsWith('Install the certificate'))!.command!;
+  assert.match(install, /--user 0 /);
+  assert.match(install, /chown 0:101 \/tls\/example\.com\/privkey\.pem; chmod 640 \/tls\/example\.com\/privkey\.pem/);
+  assert.doesNotMatch(install, /chmod 644 \/tls\/example\.com\/privkey/);
+});
+
+test('review 6: the container test uses the run command settings and runs before the container is replaced', () => {
+  const runtimeArguments = (command: string) => /(--user 101:101 .*?) (?:--entrypoint nginx )?nginx:/.exec(command)?.[1] ?? '';
+  for (const https of ['off', 'manual', 'acme'] as const) {
+    const options = { ...defaultsFor('spa', 'container'), ...(https === 'manual' ? { https } : https === 'acme' ? ACME : {}) } as Options;
+    const steps = deploySteps(options);
+    const testCommand = steps.find((step) => step.title === 'Test the config')!.command!;
+    const run = steps.find((step) => step.title === 'Start the container')!.command!;
+    assert.ok(runtimeArguments(testCommand).length > 40, testCommand);
+    assert.equal(runtimeArguments(testCommand), runtimeArguments(run), `${https}: same user, mounts, and writable paths`);
+    assert.ok(steps.findIndex((step) => step.title === 'Test the config') < steps.findIndex((step) => step.title === 'Start the container'));
+  }
+
+  const manual = deploySteps({ ...defaultsFor('static', 'container'), https: 'manual' } as Options);
+  const switchStep = manual.find((step) => step.title.startsWith('Switch HTTPS'))!.command!;
+  assert.ok(switchStep.indexOf('--entrypoint nginx') >= 0 && switchStep.indexOf('--entrypoint nginx') < switchStep.indexOf('docker rm -f nginx'), 'test before removal');
+  assert.match(switchStep, / -t && docker rm -f nginx && docker run -d --name nginx /);
+  assert.match(manual.find((step) => step.title === 'Test the config')!.command!, /-v "\$PWD\/tls:\/etc\/nginx\/tls:ro"/);
 });
 
 test('warnings explain the risky choices and carry the option key', () => {
