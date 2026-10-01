@@ -391,3 +391,93 @@ evidence links. Remove claims about the Vue app.
    layout, tokenizer, URL state against the schema contract above; wires real
    `lib/options.ts` once Part 1 lands (`lib/` is read-only for this agent).
 3. Review: Codex `sol` on the plan (now) and on the finished diff.
+
+## Revisions after Codex review round 1 (binding; they override the sections above)
+
+Review: `plan-review.md` (verdict REVISE, 18 findings). All accepted unless noted.
+
+- R1 (finding 1, Blocker): immutable asset locations use plain prefix
+  `location /assets/ { ... }`, never `^~`, so the regex protections (dotfiles,
+  sensitive extensions, `\.php$`) still win. Test: `/assets/.env`,
+  `/build/config.sql`, `/build/x.php` source never served.
+- R2 (finding 2, Blocker): PHP location stays `location ~* \.php$`. Test `.php`,
+  `.PHP`, `.Php` never return source.
+- R3 (3): reject `http3` with `realIpHeader=proxy_protocol` in validation. With
+  proxy_protocol, `/healthz` and the ACME challenge are only reachable through
+  the proxy; say so in warnings.
+- R4 (4): `rateLimitBurst = 0` → omit `burst`. Rate limiting does not depend
+  on the number of upstreams. Apply `limit_req` (and `limit_req_status 429`,
+  `limit_req_dry_run` when dry-run) to every dynamic location: proxy `/`,
+  websocket path, streaming path, PHP `\.php$`.
+- R5 (5): validation adds: `hash-ip` balancing cannot have `backup` servers; at
+  least one non-backup server; `loadBalancing` other than round-robin needs ≥2
+  servers; immutable prefixes must start and end with `/`, not equal `/`, no dot
+  segments, no duplicates; `websocketPath`/`streamingPath` must start with `/`,
+  not equal `/`, differ from each other and from `/healthz`; nested list items
+  reject unknown keys.
+- R6 (6): `wwwRedirect` renders a separate alias server block (alias name only)
+  that returns 301 to the canonical name. TLS: manual → the alias server uses
+  the same certificate paths (warning: the certificate must list both names);
+  acme → the alias server has its own `acme_certificate letsencrypt;` +
+  `$acme_certificate` lines. The HTTP redirect server lists both names and
+  answers the challenge for both.
+- R7 (7): `deploySteps` defines the bootstrap. Manual HTTPS: issue the first
+  certificate before enabling the TLS server (`certbot certonly --webroot` with
+  an HTTPS-off config from this tool, or `--standalone`), then switch. ACME in
+  a container: mount a persistent volume at `/var/cache/nginx` (owned by
+  UID 101) and publish port 80. Verification: try a local Pebble ACME server
+  (ghcr.io/letsencrypt/pebble) for an HTTP-01 issuance smoke test through the
+  redirect server; if it cannot work offline in CI, record why and keep it as a
+  documented manual check.
+- R8 (8): one external scheme/port policy. Add `publicHttpPort` (default 80,
+  advanced). `publicHttpsPort` is shown when https≠off or realIp≠off.
+  `$forwarded_proto` = trusted `X-Forwarded-Proto` when
+  `$realip_remote_addr` is a trusted proxy (geo), else `$scheme`;
+  `$forwarded_port` derives from it via map. Use these for proxy
+  X-Forwarded-Proto/Port, PHP `HTTPS`/`REQUEST_SCHEME`/`SERVER_PORT`, and cache
+  keys. Malformed XFP falls back to `$scheme`. Test trusted, untrusted, and
+  malformed senders.
+- R9 (9): add `upstreamTlsName` (required with `upstreamTls`, hostname
+  validated). `proxy_ssl_name <upstreamTlsName>; proxy_ssl_server_name on;
+  proxy_ssl_verify on; proxy_ssl_verify_depth 2;`.
+- R10 (10): PHP emits a complete inline FastCGI parameter list (from the
+  official `fastcgi_params`) with each key once, instead of `include
+  fastcgi_params` + duplicate overrides. `SCRIPT_FILENAME` and `DOCUMENT_ROOT`
+  use `$realpath_root`. Test a symlink release switch.
+- R11 (11): CSP ownership split. `_headers` keeps the non-script directives
+  that must be headers (`frame-ancestors`, `object-src`, `base-uri`,
+  `form-action`) and does NOT set `script-src`/`default-src` if Astro must emit
+  inline island scripts; Astro's `security.csp` emits the hash-based
+  `script-src`/`style-src` meta policy. If the build has no inline scripts,
+  keep a single strict header policy instead. Verify through `wrangler dev`.
+- R12 (12): mandatory interaction tests (runtime, in Docker): exactly one copy
+  of each security header on HTML, hashed asset, 404, and `/healthz`; realip
+  spoofing (untrusted sender cannot set client IP or proto); failover with two
+  upstream servers (one down); websocket path keeps normal-request keepalive;
+  gzip/identity negotiation with and without `Via`; FastCGI cache never stores
+  responses with cookies/authorization; symlink deploy; HTTP/3 request if a
+  curl with HTTP/3 is available (otherwise `nginx -t` + UDP listener check,
+  record why). `nginx -t` matrix covers IPv4/IPv6 QUIC reject/app/alias
+  servers. DNS re-resolution: `nginx -t` only (record why).
+- R13 (13): update every consumer of renamed modules/tests:
+  `.github/workflows/ci.yml`, `.github/workflows/publish-image.yml`, scripts,
+  version checks. Run the release-validation sequence locally.
+- R14 (14): root `tsconfig.json` (strict, `noEmit`, `erasableSyntaxOnly`,
+  `allowImportingTsExtensions`) covering `lib/`, `scripts/`, `tests/`;
+  type-checked in CI with the same TypeScript as `web/`. Oxfmt and Prettier
+  cover disjoint file sets; `fmt:check` must be idempotent.
+- R15 (15): docs pages rewrite repo-file links (e.g. `../web/wrangler.jsonc`)
+  to GitHub URLs `https://github.com/risan/nginx-config/blob/main/...`, keep
+  fragments, and a build-time check fails on broken internal links.
+- R16 (16): `client_body_timeout 60s` and `send_timeout 60s` are defaults —
+  omit them. Keep `client_header_timeout 15s` and `reset_timedout_connection
+  on` with a "why" comment. (Digest provenance: the team lead ran
+  `docker buildx imagetools inspect nginx:1.30.5-alpine` on 2026-10-01 →
+  `sha256:0985e772…`; image runs OpenSSL 3.5.8.)
+- R17 (17): when gzip is on, emit `gzip_proxied any`. For static/SPA content it
+  is public and has no BREACH risk; for php/proxy gzip is already an explicit
+  opt-in with a BREACH warning. This also keeps `gzip_static` working behind
+  CDNs that send `Via`.
+- R18 (18): advanced-only: `statusEndpoint`, `connLimit`, `accessLogBuffer`,
+  `gzipLevel`, `crossOriginOpenerPolicy`, `openFileCache`, `workerConnections`,
+  `workerUser`, `resolver`, ports. Compression controls sit together.
