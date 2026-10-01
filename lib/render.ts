@@ -1175,14 +1175,20 @@ function certbotLiveDirectory(o: ResolvedOptions): string {
 
 const parentDirectory = (path: string) => path.slice(0, path.lastIndexOf('/'));
 
-// A host that keeps the certbot paths needs no copy. Any other path gets files installed at the configured place.
+// Each file is decided on its own. A file that already sits at its certbot live path is never installed onto itself:
+// install removes the destination first, and the destination is the live symlink.
 function hostInstallCommands(o: ResolvedOptions): string[] {
   const live = certbotLiveDirectory(o);
-  if (o.certificatePath === `${live}/fullchain.pem` && o.certificateKeyPath === `${live}/privkey.pem`) {
-    return [];
+  const commands: string[] = [];
+  if (o.certificatePath !== `${live}/fullchain.pem`) {
+    commands.push(`install -D -m 644 ${live}/fullchain.pem ${o.certificatePath}`);
   }
 
-  return [`install -D -m 644 ${live}/fullchain.pem ${o.certificatePath}`, `install -D -m 600 ${live}/privkey.pem ${o.certificateKeyPath}`];
+  if (o.certificateKeyPath !== `${live}/privkey.pem`) {
+    commands.push(`install -D -m 600 ${live}/privkey.pem ${o.certificateKeyPath}`);
+  }
+
+  return commands;
 }
 
 function hostCertificateSteps(o: ResolvedOptions): DeployStep[] {

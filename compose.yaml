@@ -27,7 +27,7 @@ services:
     #
     #   NGINX_CONFIG=./sites-example/container.conf \
     #   NGINX_CONTENT=./public \
-    #   NGINX_SERVER_NAME=example.com \
+    #   NGINX_SERVER_NAME=localhost \
     #   docker compose up --build
     #
     # Both mounts are read-only and replace the image defaults at these paths.

@@ -249,6 +249,18 @@ function defaultCertificatePaths(target: Target, name: string): { certificatePat
 
 const WWW_REDIRECTS = ['off', 'to-apex', 'to-www'];
 
+// Every option whose default differs between some profile or target, found by comparing all eight defaults.
+// The comparison keeps derivedDefaults complete when a default changes.
+const PROFILE_OR_TARGET_KEYS: (keyof ResolvedOptions)[] = (() => {
+  const combinations = PROFILES.flatMap((profile) => TARGETS.map((target) => defaultsFor(profile.id, target.id)));
+  const [first, ...others] = combinations;
+  const keys = Object.keys(first!) as (keyof ResolvedOptions)[];
+
+  return keys.filter(
+    (key) => key !== 'profile' && key !== 'target' && !key.startsWith('certificate') && key !== 'documentRoot' && others.some((other) => JSON.stringify(other[key]) !== JSON.stringify(first![key]))
+  );
+})();
+
 /**
  * Every default that follows the profile, the target, the server name, or the www redirect.
  * The UI calls this after one of those four changes and applies the result to fields the user has not edited.
@@ -259,16 +271,15 @@ export function derivedDefaults(o: Options): Partial<Options> {
   const base = defaultsFor(o.profile, o.target);
   const name = certificateName({ serverName, wwwRedirect });
 
-  return {
+  const derived: Record<string, unknown> = {
     documentRoot: defaultDocumentRoot(o.target, serverName),
-    ...defaultCertificatePaths(o.target, name),
-    upstreams: base.upstreams,
-    httpPort: base.httpPort,
-    httpsPort: base.httpsPort,
-    ipv6: base.ipv6,
-    workerConnections: base.workerConnections,
-    resolver: base.resolver
+    ...defaultCertificatePaths(o.target, name)
   };
+  for (const key of PROFILE_OR_TARGET_KEYS) {
+    derived[key] = base[key];
+  }
+
+  return derived as Partial<Options>;
 }
 
 function defaultUpstreams(profile: Profile, target: Target): Upstream[] {

@@ -399,6 +399,10 @@ test('review 3: derivedDefaults returns every default that follows the name, red
     certificatePath: '/etc/nginx/tls/www.shop.example.org/fullchain.pem',
     certificateKeyPath: '/etc/nginx/tls/www.shop.example.org/privkey.pem',
     upstreams: [{ address: '127.0.0.1:3000', backup: false }],
+    gzip: false,
+    gzipStatic: false,
+    immutablePaths: [],
+    clientMaxBodySize: '1m',
     httpPort: 8080,
     httpsPort: 8443,
     ipv6: false,
@@ -427,4 +431,27 @@ test('review 4: container certificates must live under the mounted folder', () =
   assert.equal(container({ certificateKeyPath: '/etc/nginx/other/key.pem' }).errors.certificateKeyPath !== undefined, true);
   assert.equal(check('static', 'host', { https: 'manual', certificatePath: '/srv/cert.pem', certificateKeyPath: '/srv/key.pem' }).valid, true);
   assert.equal(container({ https: 'off', certificatePath: '/srv/cert.pem' }).valid, true);
+});
+
+test('review round 2: switching profile or target with derivedDefaults reproduces defaultsFor for every key that varies', () => {
+  const every = combinations.map(([profile, target]) => defaultsFor(profile, target));
+  const varying = Object.keys(every[0]!).filter((key) => key !== 'profile' && key !== 'target' && every.some((other) => JSON.stringify(other[key as keyof typeof other]) !== JSON.stringify(every[0]![key as keyof (typeof every)[0]])));
+  assert.ok(['gzip', 'gzipStatic', 'immutablePaths', 'clientMaxBodySize', 'upstreams', 'httpPort', 'resolver', 'ipv6', 'workerConnections', 'documentRoot'].every((key) => varying.includes(key)), `varying keys: ${varying.join(', ')}`);
+  for (const [fromProfile, fromTarget] of combinations) {
+    for (const [toProfile, toTarget] of combinations) {
+      const from = defaultsFor(fromProfile, fromTarget);
+      const to = defaultsFor(toProfile, toTarget);
+      const switched = { ...from, ...derivedDefaults({ ...from, profile: toProfile, target: toTarget } as Options) };
+      for (const key of varying) {
+        assert.deepEqual(switched[key as keyof typeof switched], to[key as keyof typeof to], `${fromProfile}/${fromTarget} -> ${toProfile}/${toTarget}: ${key}`);
+      }
+    }
+  }
+
+  const first = defaultsFor('static', 'host');
+  const changed = derivedDefaults({ ...first, profile: 'php' } as Options);
+  assert.equal(changed.gzip, false);
+  assert.equal(changed.clientMaxBodySize, '16m');
+  assert.deepEqual(changed.immutablePaths, ['/build/']);
+  assert.notStrictEqual(changed.upstreams, derivedDefaults({ ...first, profile: 'php' } as Options).upstreams, 'no shared upstream objects');
 });

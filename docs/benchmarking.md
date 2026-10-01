@@ -75,7 +75,8 @@ node scripts/smoke-http3.mjs nginx-config:local  # QUIC listener, a real HTTP/3 
 node scripts/smoke-acme.mjs nginx-config:local   # Pebble: canonical + alias certificates, restart reuses them
 node scripts/smoke-resolve.mjs nginx-config:local # backend replaced, new IP, no reload (about 5 s)
 node scripts/smoke-bootstrap.mjs nginx-config:local # the printed certbot bootstrap, run from an empty folder (Pebble)
-node scripts/smoke-compose.mjs                   # the README Compose commands, HTTP and TLS service
+node scripts/smoke-compose.mjs                   # the README Compose commands as printed, HTTP and TLS service
+node scripts/smoke-host-install.mjs              # host install/renewal-hook commands keep certbot live symlinks
 ~~~
 
 `smoke-http3.mjs` makes the HTTP/3 request with a curl that supports it (the

@@ -102,6 +102,8 @@ jobs:
         run: node scripts/smoke-bootstrap.mjs nginx-config:ci
       - name: Exercise the documented Compose commands
         run: node scripts/smoke-compose.mjs
+      - name: Exercise the printed host install and renewal-hook commands
+        run: node scripts/smoke-host-install.mjs
       - name: Issue a certificate from a local Pebble ACME server
         run: node scripts/smoke-acme.mjs nginx-config:ci
       - name: Validate Compose definition

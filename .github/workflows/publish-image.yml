@@ -64,6 +64,7 @@ jobs:
           node scripts/smoke-resolve.mjs nginx-config:release-ci
           node scripts/smoke-bootstrap.mjs nginx-config:release-ci
           node scripts/smoke-compose.mjs
+          node scripts/smoke-host-install.mjs
           node scripts/smoke-acme.mjs nginx-config:release-ci
 
   publish:

@@ -937,6 +937,32 @@ test('review 4: host and container deploy steps follow the configured certificat
   assert.match(container.find((step) => step.title.startsWith('Renew'))!.command!, /renew && docker run .* -c 'set -e; mkdir -p \/tls\/a \/tls\/b/);
 });
 
+test('review round 2: the host installs each certificate file on its own and never onto its own source', () => {
+  const live = '/etc/letsencrypt/live/example.com';
+  const steps = (overrides: Record<string, unknown>) => deploySteps({ ...defaultsFor('static', 'host'), https: 'manual', ...overrides } as Options);
+  const installOf = (list: ReturnType<typeof steps>) => list.find((step) => step.title.startsWith('Install the certificate'))?.command;
+  const hookOf = (list: ReturnType<typeof steps>) => list.find((step) => step.title.startsWith('Renew'))!.command!;
+
+  const certificateOnly = steps({ certificatePath: '/srv/site.crt' });
+  assert.equal(installOf(certificateOnly), `sudo install -D -m 644 ${live}/fullchain.pem /srv/site.crt`);
+  assert.equal(hookOf(certificateOnly), `sudo certbot renew --deploy-hook "install -D -m 644 ${live}/fullchain.pem /srv/site.crt && systemctl reload nginx"`);
+
+  const keyOnly = steps({ certificateKeyPath: '/srv/site.key' });
+  assert.equal(installOf(keyOnly), `sudo install -D -m 600 ${live}/privkey.pem /srv/site.key`);
+  assert.equal(hookOf(keyOnly), `sudo certbot renew --deploy-hook "install -D -m 600 ${live}/privkey.pem /srv/site.key && systemctl reload nginx"`);
+
+  assert.equal(installOf(steps({})), undefined);
+  assert.equal(hookOf(steps({})), 'sudo certbot renew --deploy-hook "systemctl reload nginx"');
+
+  for (const overrides of [{}, { certificatePath: '/srv/site.crt' }, { certificateKeyPath: '/srv/site.key' }, { certificatePath: '/srv/a.crt', certificateKeyPath: '/srv/a.key' }]) {
+    for (const step of steps(overrides)) {
+      for (const match of (step.command ?? '').matchAll(/install -D -m \d+ (\S+) ([^\s"&]+)/g)) {
+        assert.notEqual(match[1], match[2], `${step.title}: ${match[0]} installs a file onto itself`);
+      }
+    }
+  }
+});
+
 test('review 5: the container bootstrap is interactive and installs the key for group 101 only', () => {
   const steps = deploySteps({ ...defaultsFor('static', 'container'), https: 'manual' } as Options);
   const first = steps.find((step) => step.title === 'Get the first certificate')!;
