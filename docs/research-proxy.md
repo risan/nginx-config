@@ -1,6 +1,7 @@
 # Reverse proxy, workload, runtime image, and generator research
 
-Research checked on **2026-09-20**. Sources are upstream NGINX, Docker, and
+Research checked on **2026-09-20** and updated on **2026-10-01** for the Astro
+builder and the TypeScript renderer (schema v2). Sources are upstream NGINX, Docker, and
 GitHub documentation. This note separates documented behavior from choices
 that still need a workload test; there is no universally fastest buffer,
 timeout, cache size, or connection count.
@@ -22,14 +23,21 @@ timeout, cache size, or connection count.
   are stale for 1.30. They may remain explicit for readability or compatibility,
   but should not be described as an optimization on the current stable line.
 - This repository uses the Docker Official Image tag `nginx:1.30.5-alpine`,
-  pinned to its reviewed multi-platform digest
-  `sha256:a5f2157a0302eb0c5e300415effb63a9e70ed1eb9c107283819bf6d149ab607c`
-  when checked via the [Docker Hub tag API](https://hub.docker.com/v2/repositories/library/nginx/tags/1.30.5-alpine).
+  pinned to its reviewed multi-platform index digest
+  `sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94`
+  (read with `docker buildx imagetools inspect nginx:1.30.5-alpine` on
+  2026-10-01; the earlier pin was an older rebuild of the same tag). The
+  [Docker Hub tag API](https://hub.docker.com/v2/repositories/library/nginx/tags/1.30.5-alpine)
+  shows the same digest. That build runs OpenSSL 3.5.8 and is built with
+  `http_v3`, `gzip_static`, `realip`, `stub_status`, and threads; it also ships
+  `ngx_http_acme_module.so` ([docker-nginx Dockerfile](https://raw.githubusercontent.com/nginx/docker-nginx/master/stable/alpine/Dockerfile),
+  [pkg-oss build flags](https://raw.githubusercontent.com/nginx/pkg-oss/master/alpine/Makefile)).
+  It has no Brotli or zstd module.
   The Docker Official Image already ships UID 101; the Dockerfile uses
   `USER 101:101`, port 8080, and `/tmp` paths for the user site/service
   runtime. The image contains a generated default config and small welcome site,
   with complete config and content replaced by read-only mounts at runtime. It
-  contains no Node, Vue, or `dist/` assets. This is a deliberate image choice,
+  contains no Node or `dist/` assets. This is a deliberate image choice,
   not the separate nginxinc unprivileged image, so their runtime paths and
   entrypoint rules must not be mixed.
 
@@ -122,16 +130,18 @@ timeout, cache size, or connection count.
   and [`open_file_cache`](https://nginx.org/en/docs/http/ngx_http_core_module.html#open_file_cache).
 - Give content-hashed assets a long `public, max-age=31536000, immutable`
   policy. Keep `index.html` at `no-cache` so deployments are discovered.
-  Precompressed `.gz` assets can be served with `gzip_static`, but the module
-  is not built by default, so generated config must first verify the target
-  image includes it. Source: [`gzip_static`](https://nginx.org/en/docs/http/ngx_http_gzip_static_module.html).
+  Precompressed `.gz` assets can be served with `gzip_static`. The module is
+  not built by default in a source build, but the pinned official image includes
+  it (verified with `nginx -V`), so the generator turns it on for static and SPA
+  sites; other packages must be checked first. Source: [`gzip_static`](https://nginx.org/en/docs/http/ngx_http_gzip_static_module.html).
 
-### Go HTTP service
+### Go and other HTTP services
 
-- A Go service uses the normal reverse-proxy preset; it needs no special NGINX
-  module. Default to a single upstream, safe normalized forwarding headers,
-  regular buffering, and explicit application timeouts. WebSocket/SSE/upload
-  behavior must be selected per route rather than applied to the whole service.
+- A Go service uses the normal reverse-proxy profile (the former `go` profile
+  was merged into it); it needs no special NGINX module. Default to a single
+  upstream, safe normalized forwarding headers, regular buffering, and explicit
+  application timeouts. WebSocket and SSE behavior is selected per path (its own
+  `location`) rather than applied to the whole service.
 
 ### PHP-FPM
 
@@ -149,25 +159,28 @@ timeout, cache size, or connection count.
 
 ## Safe generator architecture
 
-- Build a client-only Vue + Vite application. Store choices in one typed model
-  and render config with pure functions. The same model should drive the form,
-  preview, download, examples, and tests so snippets cannot drift.
-- Offer bounded presets: static, SPA, Go/reverse proxy, PHP-FPM, WebSocket
-  upgrades, response streaming for SSE or long-lived output, public proxy cache,
-  and TLS. Keep request buffering enabled in the response-streaming option.
-  Trusted-load-balancer source normalization and upload streaming are manual,
-  deployment- or route-specific opt-ins because they change trust and retry
-  behavior. Put risky or workload-dependent switches behind an “advanced”
-  explanation.
+- Build a client-only Astro application with React islands. Store choices in
+  one typed model (`lib/options.ts`) and render config with pure functions
+  (`lib/render.ts`). The same model drives the form, preview, download,
+  examples, docs text, and tests so snippets cannot drift.
+- Offer bounded choices: the profiles static, SPA, PHP-FPM, and reverse proxy;
+  the targets server/VM and container; WebSocket and streaming paths; public
+  proxy and FastCGI cache; TLS with own certificates or the ACME module;
+  HTTP/3; and real client IP behind Cloudflare or a custom proxy. Keep request
+  buffering enabled in the streaming option. Upload streaming remains a manual
+  route-specific opt-in because it changes retry behavior. Put risky or
+  workload-dependent switches behind an “advanced” explanation or a warning.
 - Never accept raw directives. Validate each field as the NGINX token it
   represents: host/IP, port, CIDR, server name, size, or duration. Reject
   newlines, semicolons, braces, comments, control characters, and unexpected
-  whitespace. Fixed paths are safer than free-form paths. Vue's HTML escaping
+  whitespace. Fixed paths are safer than free-form paths. React's HTML escaping
   protects the page; token validation separately protects the generated config.
+  Header values use their own validator (no quotes, backslashes, `$`, braces,
+  or control characters).
 - Generate deterministic output and comments. No timestamp in the config.
   Download with an in-browser `Blob`; no backend, account, analytics, or secret
   is needed. The generated text is never executed by the web app.
-- Keep the client-only Vue + Vite build separate from the NGINX runtime. Publish
+- Keep the client-only Astro build separate from the NGINX runtime. Publish
   `web/` through the operator's Workers deployment; the runtime image does not
   package the UI or execute downloaded configuration text.
 
@@ -242,8 +255,9 @@ timeout, cache size, or connection count.
 8. Static/SPA tests prove a real asset is served, a missing asset returns 404,
    an application route falls back to `index.html`, hashed assets are immutable,
    and `index.html` is revalidated.
-9. PHP tests prove only an existing `.php` file reaches PHP-FPM. Go tests prove
-   host, scheme, and normalized client address. HTTPS-upstream tests fail an
+9. PHP tests prove only an existing `.php` file reaches PHP-FPM, in any letter
+   case. Proxy tests prove host, scheme, and normalized client address, upstream
+   connection reuse, and that an untrusted sender cannot set them. HTTPS-upstream tests fail an
    untrusted certificate.
 10. The built runtime runs as UID 101, starts with a read-only root and only
     `/tmp` writable, has no Linux capabilities, becomes healthy through HTTP,

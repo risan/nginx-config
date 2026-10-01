@@ -1,37 +1,27 @@
 # Operations, containers, and releases
 
-The `web/` directory is a client-only configuration helper. Deploy its built
-assets separately through a Workers-compatible static deployment; the UI
-downloads configuration text and does not run it. The container is an optimized
-NGINX runtime for user sites and services. It ships a small welcome page, uses
-port 8080, accepts `Host: localhost`, and rejects unknown hosts with 444.
+The `web/` directory is the client-only configuration builder (Astro). It is
+deployed separately as static assets with Wrangler; the UI downloads
+configuration text and does not run it. The container is a hardened NGINX
+runtime for user sites and services. It ships a small welcome page, uses port
+8080, accepts `Host: localhost`, and rejects unknown hosts with 444.
 
-## Workers generator deployment
+## Builder deployment
 
-Connect the repository manually in the Cloudflare Dashboard. Use the Worker
-name `nginx-config-generator`, project root `web`, `npm run build` as the build
-command, and
-`npx wrangler deploy` as the deploy command. The repository's
-[`web/wrangler.jsonc`](../web/wrangler.jsonc) is the deployment configuration:
-it publishes `web/dist`, uses explicit `404-page` handling, and does not contain
-an account-specific URL or zone binding. The checked-in `web/public/_headers`
-supplies browser security headers. Do not add a GitHub Actions deployment
-workflow for this client.
-
-For the same flow from a checked-out repository:
+The app, its Wrangler configuration, and its headers are described in
+[`web/README.md`](../web/README.md). From a checked-out repository:
 
 ~~~bash
 cd web
 npm ci
-npm run build
 npm run deploy:dry-run
 npm run deploy
 ~~~
 
-`npm run workers:dev` starts the local Workers runtime. The deploy command
-requires the operator's Cloudflare authentication; this repository records no
-deployment result or public URL. The UI only downloads generated configuration
-text. A user still validates and mounts that file into the NGINX runtime.
+The deploy command requires the operator's Cloudflare authentication; this
+repository records no deployment result or public URL, and it has no GitHub
+Actions deployment workflow for the app. A user still validates and mounts the
+downloaded file into the NGINX runtime.
 
 ## Local container
 
@@ -68,20 +58,22 @@ site under `/usr/share/nginx/html`. For a real workload, mount the complete
 reviewed configuration and the site or service content read-only:
 
 ~~~bash
-NGINX_CONFIG=./path/to/nginx.conf \
+NGINX_CONFIG=./sites-example/container.conf \
 NGINX_CONTENT=./path/to/public \
 NGINX_SERVER_NAME=localhost \
 docker compose up --build nginx
 ~~~
 
-The mounted configuration must listen on 8080 and use
+The mounted configuration must be made for the **Container** target (not Server
+or VM: that one binds port 80 and writes under `/var/log`). It listens on 8080 and uses
 `/usr/share/nginx/html` for static content. The two mounts replace the image
 defaults at `/etc/nginx/nginx.conf` and `/usr/share/nginx/html`. Set
 `NGINX_SERVER_NAME` to the mounted configuration's `server_name`; `localhost`
 is the local example used by the health check.
 
-Compose also has an opt-in TLS service. Create a configuration that listens on
-8443 and uses certificate paths under /etc/nginx/tls, then mount it and its
+Compose also has an opt-in TLS service. Create a Container-target configuration
+with HTTPS set to your own certificate files (it listens on 8443 and uses
+certificate paths under /etc/nginx/tls), then mount it and its
 certificate directory. Set `NGINX_TLS_SERVER_NAME` to the same name as the
 configuration's `server_name`; this lets the local health check send the right
 TLS SNI. The mounted directory and files must be readable by UID 101:
@@ -101,10 +93,14 @@ capabilities, and no-new-privileges settings when exposing the image beyond a
 developer laptop. Keep the published port narrow. Do not mount a user's
 production NGINX directory into the runtime container.
 
-The runtime image contains no Node toolchain, Vue assets, `dist/` tree, or
-generator source. It uses the Docker Official `nginx:1.30.5-alpine` image and
-its shipped numeric UID 101:101, with port 8080 and writable temporary paths
-under `/tmp`. The canonical renderer generates the default config and checked-in
+The runtime image contains no Node toolchain, `dist/` tree, or builder source.
+It uses the Docker Official `nginx:1.30.5-alpine` image, pinned by index digest
+`sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94`
+(checked with `docker buildx imagetools inspect` on 2026-10-01), and its shipped
+numeric UID 101:101, with port 8080 and writable temporary paths under `/tmp`.
+That build has OpenSSL 3.5.8, HTTP/2, HTTP/3, `gzip_static`, `realip`, and
+`stub_status`, and it ships `ngx_http_acme_module.so`. It has no Brotli or zstd
+module. The canonical renderer generates the default config and checked-in
 profiles; validate a downloaded or edited full config before mounting it. Do
 not mix these paths or entrypoint assumptions with the separate nginxinc
 unprivileged image.
@@ -122,13 +118,36 @@ The browser download is text. Before installing it:
    TLS, and health endpoints.
 5. Reload gracefully and make a real request before declaring the change live.
 
-The generated HTTP listener defaults to port 8080. The Go profile's loopback
-upstream defaults to `127.0.0.1:8081`, keeping the application listener separate
-from NGINX; the validator rejects loopback upstreams that reuse either enabled
-NGINX listener port. A named service such as `backend:8080` may use the same
-numeric port because it runs in a different network namespace.
+The container target's HTTP listener defaults to port 8080 (HTTPS 8443); the
+server target uses 80 and 443. The reverse proxy profile's loopback upstream
+defaults to `127.0.0.1:3000`, keeping the application listener separate from
+NGINX; the validator rejects loopback upstreams that reuse either enabled NGINX
+listener port. A named service such as `backend:8080` may use the same numeric
+port because it runs in a different network namespace.
 
-The renderer and Workers UI cannot configure your service manager, DNS, firewall,
+### Automatic certificates in a container
+
+With HTTPS set to Automatic, the NGINX ACME module stores its account and
+certificates under `/var/cache/nginx/acme-letsencrypt`. The image's root
+filesystem is read-only, so mount a persistent volume there, and make user 101
+own it **after** Docker has created the volume contents. A fresh named volume
+takes the ownership of the image directory (root) on its first mount, which
+would make NGINX fail with `mkdir() ... failed (13: Permission denied)`. The
+generated deploy steps therefore run, once, before the first start:
+
+~~~bash
+docker volume create nginx-acme
+docker run --rm --user 0 --entrypoint sh -v nginx-acme:/var/cache/nginx \
+  nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94 \
+  -c 'mkdir -p /var/cache/nginx/acme-letsencrypt && chown -R 101:101 /var/cache/nginx'
+~~~
+
+Publish port 80 as well (`-p 80:8080`): Let's Encrypt checks the domain with
+HTTP-01 on port 80, and the HTTP server answers the challenge before it
+redirects to HTTPS. `scripts/smoke-acme.mjs` runs this whole path against a
+local Pebble ACME server. Use the staging option until issuing works.
+
+The renderer and builder cannot configure your service manager, DNS, firewall,
 certificate renewal, trusted load balancer CIDRs, upstream CA, or cache
 invalidation. Keep those decisions in deployment configuration and review them
 separately.
@@ -230,14 +249,19 @@ release; a multi-architecture build alone is not post-push proof.
 When a stable patch is released:
 
 1. Read the official release and security advisory notes.
-2. Update `lib/version.js`, the `NGINX_VERSION` arguments in `Dockerfile` and
-   both Compose services, smoke-test defaults, generated examples, and dated
-   documentation. `lib/version.js` is canonical for generated text, but these
+2. Update `lib/version.ts` (`NGINX_VERSION` and `NGINX_IMAGE_DIGEST`), the
+   `NGINX_VERSION` arguments in `Dockerfile` and both Compose services,
+   `scripts/smoke-image.sh`, generated examples, and dated documentation.
+   `lib/version.ts` is canonical for generated text and for the smoke tests'
+   image, but these
    build and release pins are explicit interfaces and must stay in sync.
 3. Refresh the pinned base-image digest and lockfile as applicable. Verify the
    digest belongs to the intended multi-platform tag.
-4. Run `node scripts/check-nginx-version.mjs` and the full renderer, browser,
-   NGINX syntax, runtime, and container checks; the version checker is a guard,
+4. Run `node scripts/check-nginx-version.mjs` and the full renderer, type,
+   browser, NGINX syntax matrix (`scripts/verify-nginx-configs.mjs`), runtime
+   smoke (`smoke-image.sh`, `smoke-proxy`, `smoke-cache`, `smoke-php`,
+   `smoke-static`, `smoke-tls`, `smoke-http3`, `smoke-acme`), and container
+   checks; the version checker is a guard,
    not a substitute for reviewing every pin and example.
 5. Compare the expanded configuration and test TLS, static, proxy, PHP, and
    error paths before tagging.

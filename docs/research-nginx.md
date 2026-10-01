@@ -1,6 +1,7 @@
 # NGINX Open Source research baseline
 
-Research checked: **2026-09-20**. This note covers the free, open-source NGINX
+Research checked: **2026-09-20**, updated **2026-10-01** (digest, image
+modules, OCSP, ACME). This note covers the free, open-source NGINX
 server. NGINX Plus-only features are out of scope.
 
 ## Current supported target
@@ -156,7 +157,11 @@ ssl_session_timeout 10m;
   key is not a safe fleet policy.
 - OCSP stapling is an opt-in feature. It needs the issuer chain, a trusted CA
   file, a working resolver, and `ssl_stapling_verify on`. Do not enable it with
-  incomplete placeholders and call that secure.
+  incomplete placeholders and call that secure. Let's Encrypt removed OCSP URLs
+  from certificates on 2025-05-07 and turned off its responders on 2025-08-06
+  ([announcement](https://letsencrypt.org/2024/12/05/ending-ocsp/)), so stapling
+  does nothing for its certificates and NGINX only logs a warning. The
+  generator therefore never emits it.
 - HSTS is safe only after the domain works entirely over HTTPS. Start without
   `includeSubDomains` or `preload`; those flags affect other hosts and are hard
   to undo. Add the header with `always` only after that operational decision.
@@ -288,7 +293,9 @@ gzip_types
   usually appropriate.
 - For build-generated assets, precompressed `.gz` files move compression work
   out of request handling. `gzip_static on` needs the optional
-  `ngx_http_gzip_static_module`; verify with `nginx -V`.
+  `ngx_http_gzip_static_module`; verify with `nginx -V`. The pinned official
+  Alpine image is built with it, so the generator enables it for static and
+  SPA sites.
 - Do not compress responses that mix secrets with attacker-controlled text over
   TLS. The NGINX docs explicitly warn about BREACH. Static public assets do not
   have that secret-reflection pattern.
