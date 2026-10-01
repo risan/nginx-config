@@ -3,10 +3,12 @@
 // Runs generated proxy configs in front of a small echo backend and checks forwarding identity,
 // connection reuse, WebSocket scoping, failover, and real-IP spoofing protection.
 import http from 'node:http';
+import net from 'node:net';
+import { spawnSync } from 'node:child_process';
 
 import { generateConfig } from '../lib/render.ts';
 import { defaultsFor } from '../lib/options.ts';
-import { assert, countHeader, createSmoke, echoBackendConfig, parseEcho, request, runSmoke } from './smoke-kit.mjs';
+import { assert, countHeader, createSmoke, echoBackendConfig, parseEcho, request, runSmoke, sleep } from './smoke-kit.mjs';
 
 const smoke = createSmoke('proxy');
 
@@ -111,7 +113,7 @@ http {
     server {
         listen 8090;
         location / {
-            set $edge edge-trusted;
+            set $edge $http_x_test_edge;
             proxy_set_header Host $host;
             proxy_set_header X-Forwarded-For 203.0.113.9;
             proxy_set_header X-Forwarded-Proto $http_x_test_proto;
@@ -134,27 +136,108 @@ http {
       trustedProxies: [`${cdnAddress}/32`],
       realIpHeader: 'X-Forwarded-For',
       publicHttpPort: 8000,
-      publicHttpsPort: 8001
+      publicHttpsPort: 8001,
+      wwwRedirect: 'to-apex'
     }),
     publish: [8080]
   });
+  const standardPorts = smoke.startNginx({
+    containerName: 'edge-standard',
+    alias: 'edge-standard',
+    config: proxyConfig({
+      upstreams: [{ address: 'backend:8081', backup: false }],
+      realIp: 'custom',
+      trustedProxies: [`${cdnAddress}/32`],
+      wwwRedirect: 'to-apex'
+    }),
+    publish: [8080]
+  });
+  const standardPort = await smoke.port(standardPorts, 8080);
+  await smoke.waitFor({ port: standardPort, path: '/healthz', host: 'example.com' }, 204, 'standard-ports edge');
   const trustedPort = await smoke.port(trusted, 8080);
   const cdnPort = await smoke.port(cdn, 8090);
   await smoke.waitFor({ port: trustedPort, path: '/healthz', host: 'example.com' }, 204, 'trusted edge');
-  await smoke.waitFor({ port: cdnPort, path: '/healthz', host: 'example.com' }, 204, 'proxy in front');
+  await smoke.waitFor({ port: cdnPort, path: '/healthz', host: 'example.com', headers: { 'X-Test-Edge': 'edge-trusted' } }, 204, 'proxy in front');
 
-  const viaProxy = (await echo(cdnPort, { headers: { 'X-Test-Proto': 'https' } })).fields;
+  const viaProxy = (await echo(cdnPort, { headers: { 'X-Test-Proto': 'https', 'X-Test-Edge': 'edge-trusted' } })).fields;
   assert(viaProxy.xff === '203.0.113.9', `a trusted proxy could not set the client IP: ${viaProxy.xff}`);
   assert(viaProxy.proto === 'https' && viaProxy.port === '8001', `trusted scheme was not used: ${viaProxy.proto} ${viaProxy.port}`);
-  const viaProxyHttp = (await echo(cdnPort, { headers: { 'X-Test-Proto': 'http' } })).fields;
+  const viaProxyHttp = (await echo(cdnPort, { headers: { 'X-Test-Proto': 'http', 'X-Test-Edge': 'edge-trusted' } })).fields;
   assert(viaProxyHttp.proto === 'http' && viaProxyHttp.port === '8000', `trusted http scheme was not used: ${viaProxyHttp.proto} ${viaProxyHttp.port}`);
-  const malformed = (await echo(cdnPort, { headers: { 'X-Test-Proto': 'ftp, https' } })).fields;
+  const malformed = (await echo(cdnPort, { headers: { 'X-Test-Proto': 'ftp, https', 'X-Test-Edge': 'edge-trusted' } })).fields;
   assert(malformed.proto === 'http' && malformed.port === '8000', `malformed scheme was not ignored: ${malformed.proto} ${malformed.port}`);
 
   const direct = (await echo(trustedPort, { headers: { 'X-Forwarded-For': '203.0.113.9', 'X-Forwarded-Proto': 'https' } })).fields;
   assert(direct.xff !== '203.0.113.9' && direct.xff !== '', `an untrusted sender set the client IP: ${direct.xff}`);
   assert(direct.proto === 'http' && direct.port === '8000', `an untrusted sender set the scheme: ${direct.proto} ${direct.port}`);
 
-  process.stdout.write('PASS proxy identity, upstream keepalive, WebSocket scope, healthz headers, failover, and real-IP trust\n');
+  // R21: exact redirect Locations from the alias name (www.example.com) in every scheme and port case.
+  async function aliasLocation(port, headers) {
+    const response = await request({ port, host: 'www.example.com', path: '/x?y=1', headers });
+    assert(response.status === 301, `alias redirect returned ${response.status}`);
+
+    return response.headers.location;
+  }
+
+  const via = (proto, edge) => ({ 'X-Test-Proto': proto, 'X-Test-Edge': edge });
+  const expectations = [
+    ['trusted TLS proxy, public ports 8000/8001', cdnPort, via('https', 'edge-trusted'), 'https://example.com:8001/x?y=1'],
+    ['trusted plain proxy, public ports 8000/8001', cdnPort, via('http', 'edge-trusted'), 'http://example.com:8000/x?y=1'],
+    ['trusted proxy with a malformed scheme', cdnPort, via('ftp, https', 'edge-trusted'), 'http://example.com:8000/x?y=1'],
+    ['untrusted sender claiming https', trustedPort, { 'X-Forwarded-Proto': 'https' }, 'http://example.com:8000/x?y=1'],
+    ['direct HTTP, public ports 8000/8001', trustedPort, {}, 'http://example.com:8000/x?y=1'],
+    ['trusted TLS proxy, default public ports', cdnPort, via('https', 'edge-standard'), 'https://example.com/x?y=1'],
+    ['trusted plain proxy, default public ports', cdnPort, via('http', 'edge-standard'), 'http://example.com/x?y=1'],
+    ['direct HTTP, default public ports', standardPort, {}, 'http://example.com/x?y=1']
+  ];
+  for (const [label, port, headers, expected] of expectations) {
+    const actual = await aliasLocation(port, headers);
+    assert(actual === expected, `${label}: Location is ${actual}, expected ${expected}`);
+  }
+
+  // R19: with the PROXY protocol the public port needs the PROXY header, but the loopback probe stays plain.
+  const behindProtocol = smoke.startNginx({
+    containerName: 'edge-protocol',
+    config: generateConfig({
+      ...defaultsFor('static', 'container'),
+      serverName: 'localhost',
+      realIp: 'custom',
+      realIpHeader: 'proxy_protocol',
+      trustedProxies: [`${cdnAddress}/32`]
+    }),
+    publish: [8080]
+  });
+  const protocolPort = await smoke.port(behindProtocol, 8080);
+  let probe = '';
+  for (let attempt = 0; attempt < 60 && !probe; attempt += 1) {
+    const result = spawnSync('docker', ['exec', behindProtocol, 'wget', '--quiet', '--header=Host:localhost', '--output-document=/dev/null', 'http://127.0.0.1:8080/healthz'], { encoding: 'utf8' });
+    probe = result.status === 0 ? 'ok' : '';
+    if (!probe) {
+      await sleep(200);
+    }
+  }
+
+  assert(probe === 'ok', 'the Dockerfile health probe on 127.0.0.1 failed with the PROXY protocol on');
+  let plainStatus = 0;
+  try {
+    plainStatus = (await request({ port: protocolPort, path: '/healthz', host: 'localhost' })).status;
+  } catch {
+    plainStatus = 0;
+  }
+
+  assert(plainStatus !== 204, 'a request without the PROXY header was accepted on the public listener');
+  const proxied = await new Promise((resolve, reject) => {
+    const socket = net.connect(protocolPort, '127.0.0.1');
+    let data = '';
+    socket.on('data', (chunk) => {
+      data += chunk;
+    });
+    socket.on('error', reject);
+    socket.on('close', () => resolve(data));
+    socket.write('PROXY TCP4 203.0.113.5 10.0.0.1 1234 8080\r\nGET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+  });
+  assert(/^HTTP\/1\.1 204/.test(proxied), `a request with the PROXY header failed: ${proxied.slice(0, 80)}`);
+
+  process.stdout.write('PASS proxy identity, upstream keepalive, WebSocket scope, healthz headers, failover, real-IP trust, alias redirect Locations, and PROXY-protocol health probe\n');
 });
 

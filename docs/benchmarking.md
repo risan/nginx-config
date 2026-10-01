@@ -65,23 +65,25 @@ takes the image as its argument:
 ~~~bash
 docker build -t nginx-config:local .
 sh scripts/smoke-image.sh nginx-config:local     # default site, read-only, non-root, gzip
-node scripts/smoke-proxy.mjs nginx-config:local  # identity, keepalive, WebSocket scope, failover, real IP
+node scripts/smoke-proxy.mjs nginx-config:local  # identity, keepalive, WebSocket scope, failover, real IP,
+                                                 # alias redirect Locations, PROXY-protocol health probe
 node scripts/smoke-cache.mjs nginx-config:local  # proxy cache privacy and Vary
 node scripts/smoke-php.mjs nginx-config:local    # PHP-FPM, source protection, symlink release, FastCGI cache
 node scripts/smoke-static.mjs nginx-config:local # headers once, immutable assets, gzip, gzip_static
 node scripts/smoke-tls.mjs nginx-config:local    # redirect to the public port, h2, HSTS, resumption
-node scripts/smoke-http3.mjs nginx-config:local  # QUIC listener, Alt-Svc, a real HTTP/3 request
-node scripts/smoke-acme.mjs nginx-config:local   # certificate from a local Pebble ACME server
+node scripts/smoke-http3.mjs nginx-config:local  # QUIC listener, a real HTTP/3 request (200 + Alt-Svc), TCP fallback
+node scripts/smoke-acme.mjs nginx-config:local   # Pebble: canonical + alias certificates, restart reuses them
+node scripts/smoke-resolve.mjs nginx-config:local # backend replaced, new IP, no reload (about 35 s)
 ~~~
 
 `smoke-http3.mjs` makes the HTTP/3 request with a curl that supports it (the
-`ymuski/curl-http3` image by default, `HTTP3_CURL_IMAGE` to change it). Without
-such a curl it still checks the UDP listener and the Alt-Svc header, and says
-that the request was skipped. `smoke-acme.mjs` pulls `ghcr.io/letsencrypt/pebble`
+`ymuski/curl-http3` image by default, `HTTP3_CURL_IMAGE` to change it) and fails
+without one; `ALLOW_NO_HTTP3_CLIENT=1` reduces it to the UDP listener and
+Alt-Svc checks on a machine that cannot pull a client. `smoke-acme.mjs` pulls `ghcr.io/letsencrypt/pebble`
 and its test DNS server, and needs a free private subnet (random 10.x.x.0/24 by
-default, `SMOKE_ACME_SUBNET` to set one). DNS re-resolution of backend names is
-checked with `nginx -t` only: a name change at runtime is hard to reproduce in a
-portable test.
+default, `SMOKE_ACME_SUBNET` to set one). `smoke-resolve.mjs` replaces the
+backend container behind a Docker network alias and waits for NGINX to follow
+the new address by itself (the resolver's `valid=30s` sets the delay).
 
 Run the generated and hand-edited files through the same NGINX package that will
 serve them:

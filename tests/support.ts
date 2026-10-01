@@ -95,7 +95,7 @@ export function redirectServer(config: string): Block {
 
 export function aliasServer(config: string, name: string, tls: boolean): Block {
   const match = servers(config).find(
-    (server) => directive(server, 'server_name')[0] === name && directive(server, 'return').length > 0 && directive(server, 'listen').some((value) => value.includes('ssl') === tls)
+    (server) => directive(server, 'server_name')[0] === name && (directive(server, 'return').length > 0 || find(server, 'location').some((child) => directive(child, 'return').length > 0)) && directive(server, 'listen').some((value) => value.includes('ssl') === tls)
   );
   if (!match) {
     throw new Error(`no alias server for ${name}`);

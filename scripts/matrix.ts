@@ -162,6 +162,14 @@ function combinationEntries(): MatrixEntry[] {
       options: { ...baseOptions('static', 'container', 'manual'), http3: true, ipv6: true, wwwRedirect: 'to-www', openFileCache: true } as Options
     },
     {
+      name: 'combo-static-proxy-protocol-http-alias',
+      options: { ...baseOptions('static', 'container', 'off'), realIp: 'custom', realIpHeader: 'proxy_protocol', trustedProxies: ['10.0.0.0/8'], wwwRedirect: 'to-www' } as Options
+    },
+    {
+      name: 'combo-proxy-http-alias-trusted-proxy',
+      options: { ...baseOptions('proxy', 'host', 'off'), realIp: 'cloudflare', wwwRedirect: 'to-apex', publicHttpPort: 8000, publicHttpsPort: 8001 } as Options
+    },
+    {
       name: 'combo-spa-proxy-protocol',
       options: { ...baseOptions('spa', 'host', 'manual'), realIp: 'custom', realIpHeader: 'proxy_protocol', trustedProxies: ['10.0.0.0/8'] } as Options
     }

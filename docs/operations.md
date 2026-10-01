@@ -145,7 +145,21 @@ docker run --rm --user 0 --entrypoint sh -v nginx-acme:/var/cache/nginx \
 Publish port 80 as well (`-p 80:8080`): Let's Encrypt checks the domain with
 HTTP-01 on port 80, and the HTTP server answers the challenge before it
 redirects to HTTPS. `scripts/smoke-acme.mjs` runs this whole path against a
-local Pebble ACME server. Use the staging option until issuing works.
+local Pebble ACME server: it issues separate certificates for the canonical name
+and the www alias, then restarts NGINX on the same volume and checks that the
+same certificates are served with no new order. Use the staging option until
+issuing works.
+
+### Your own certificates in a container
+
+The HTTP server serves `/.well-known/acme-challenge/` from
+`/var/cache/nginx/acme-challenge`, in every profile and also with HTTPS off.
+Mount a host folder there read-only. The first certificate needs the HTTP
+server, so start the container with the config set to HTTPS **Off**, run
+`certbot certonly --webroot -w /acme` in a certbot container that mounts the
+same folder, copy the files to `./tls/<name>/` (the key must be readable by
+UID 101), then start the container again with the HTTPS config. The generated
+Deploy steps print each command.
 
 The renderer and builder cannot configure your service manager, DNS, firewall,
 certificate renewal, trusted load balancer CIDRs, upstream CA, or cache
@@ -260,7 +274,8 @@ When a stable patch is released:
 4. Run `node scripts/check-nginx-version.mjs` and the full renderer, type,
    browser, NGINX syntax matrix (`scripts/verify-nginx-configs.mjs`), runtime
    smoke (`smoke-image.sh`, `smoke-proxy`, `smoke-cache`, `smoke-php`,
-   `smoke-static`, `smoke-tls`, `smoke-http3`, `smoke-acme`), and container
+   `smoke-static`, `smoke-tls`, `smoke-http3`, `smoke-acme`, `smoke-resolve`),
+   and container
    checks; the version checker is a guard,
    not a substitute for reviewing every pin and example.
 5. Compare the expanded configuration and test TLS, static, proxy, PHP, and

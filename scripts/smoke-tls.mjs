@@ -120,5 +120,30 @@ await runSmoke(smoke, async () => {
     assert(unknown.status !== 0, `unknown SNI was accepted for ${protocol}:\n${unknown.output}`);
   }
 
-  process.stdout.write('PASS TLS redirect to the public port, certificate, HTTP/2, HSTS, TLS 1.2/1.3 resumption, early data, and unknown-SNI checks\n');
+  // R21: exact Location values, from the canonical name and the alias, over HTTP and HTTPS.
+  for (const publicHttpsPort of [443, 9443]) {
+    const aliasConfig = generateConfig({
+      ...defaultsFor('static', 'container'),
+      serverName: 'example.com',
+      wwwRedirect: 'to-apex',
+      https: 'manual',
+      certificatePath: '/tmp/nginx-config-tls/fullchain.pem',
+      certificateKeyPath: '/tmp/nginx-config-tls/privkey.pem',
+      publicHttpsPort
+    });
+    const aliasEdge = smoke.startNginx({ containerName: `alias-${publicHttpsPort}`, config: aliasConfig, mounts: [[certificates, '/tmp/nginx-config-tls']], publish: [8080, 8443] });
+    const aliasHttp = await smoke.port(aliasEdge, 8080);
+    const aliasHttps = await smoke.port(aliasEdge, 8443);
+    await smoke.waitFor({ port: aliasHttps, path: '/healthz', host: 'example.com', tls: true }, 204, 'alias TLS edge');
+    const target = `https://example.com${publicHttpsPort === 443 ? '' : `:${publicHttpsPort}`}/p?q=1`;
+    for (const host of ['example.com', 'www.example.com']) {
+      const overHttp = await request({ port: aliasHttp, host, path: '/p?q=1' });
+      assert(overHttp.status === 308 && overHttp.headers.location === target, `HTTP ${host}: ${overHttp.status} ${overHttp.headers.location}, expected ${target}`);
+    }
+
+    const overHttps = await request({ port: aliasHttps, host: 'www.example.com', path: '/p?q=1', tls: true });
+    assert(overHttps.status === 301 && overHttps.headers.location === target, `HTTPS alias: ${overHttps.status} ${overHttps.headers.location}, expected ${target}`);
+  }
+
+  process.stdout.write('PASS TLS redirect to the public port, certificate, HTTP/2, HSTS, TLS 1.2/1.3 resumption, early data, unknown-SNI, and alias redirect Location checks\n');
 });

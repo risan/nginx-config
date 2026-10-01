@@ -163,7 +163,7 @@ test('A6/R1: immutable assets use plain prefixes, never ^~ or a hash regex', () 
     assert.deepEqual(directive(block, 'add_header'), ['Cache-Control "public, max-age=31536000, immutable"']);
   }
 
-  assert.ok(!find(server, 'location').some((block) => block.args.startsWith('^~')));
+  assert.ok(!find(server, 'location').some((block) => block.args.startsWith('^~') && !block.args.includes('acme-challenge')));
   assert.doesNotMatch(config, /\{8,\}/);
   assert.doesNotMatch(config, /immutable[\s\S]*location ~/);
   assert.deepEqual(find(appServer(configFor('static', 'host'), 'example.com'), 'location').filter((block) => block.args.startsWith('/') && block.args !== '/' ).length, 0);
@@ -294,7 +294,7 @@ test('B5: the request ID is logged, sent to backends, and passed to PHP', () => 
   assert.ok(directive(location(appServer(configFor('php', 'host'), 'example.com'), '~* \\.php$'), 'fastcgi_param').includes('HTTP_X_REQUEST_ID $request_id'));
 });
 
-test('B8: manual HTTPS answers the ACME challenge on the HTTP listener before redirecting', () => {
+test('B8/R20: manual HTTPS answers the ACME challenge on the HTTP listener before redirecting', () => {
   for (const target of targets) {
     const config = configFor('proxy', target, MANUAL_TLS);
     const redirect = redirectServer(config);
@@ -304,11 +304,85 @@ test('B8: manual HTTPS answers the ACME challenge on the HTTP listener before re
       ['^~ /.well-known/acme-challenge/', '/']
     );
     assert.deepEqual(locations[0]!.directives, [
-      { name: 'root', args: '/var/www/_letsencrypt' },
+      { name: 'root', args: target === 'host' ? '/var/www/_letsencrypt' : '/var/cache/nginx/acme-challenge' },
       { name: 'try_files', args: '$uri =404' }
     ]);
     assert.deepEqual(locations[1]!.directives, [{ name: 'return', args: `308 https://example.com$request_uri` }]);
   }
+});
+
+test('R20: the challenge location is served on HTTP in every profile, also with HTTPS off, for every listed name', () => {
+  for (const profile of profiles) {
+    const config = configFor(profile, 'host');
+    const server = appServer(config);
+    const challenge = location(server, '^~ /.well-known/acme-challenge/');
+    assert.deepEqual(challenge.directives, [
+      { name: 'root', args: '/var/www/_letsencrypt' },
+      { name: 'try_files', args: '$uri =404' }
+    ]);
+    const locations = find(server, 'location').map((block) => block.args);
+    assert.ok(locations.indexOf('^~ /.well-known/acme-challenge/') < locations.indexOf('/'), `${profile}: challenge before the catch-all`);
+  }
+
+  const alias = aliasServer(configFor('proxy', 'container', { wwwRedirect: 'to-apex' }), 'www.example.com', false);
+  assert.deepEqual(find(alias, 'location').map((block) => block.args), ['^~ /.well-known/acme-challenge/', '/']);
+  assert.deepEqual(directive(location(alias, '^~ /.well-known/acme-challenge/'), 'root'), ['/var/cache/nginx/acme-challenge']);
+
+  const manual = redirectServer(configFor('static', 'host', { ...MANUAL_TLS, wwwRedirect: 'to-apex' }));
+  assert.deepEqual(directive(manual, 'server_name'), ['example.com www.example.com']);
+  assert.ok(find(manual, 'location').some((block) => block.args === '^~ /.well-known/acme-challenge/'));
+
+  const acme = redirectServer(configFor('static', 'host', ACME));
+  assert.ok(!find(acme, 'location').some((block) => block.args.includes('acme-challenge')), 'the ACME module answers its own challenge');
+});
+
+test('R21: every redirect has an exact Location', () => {
+  const returns = (server: Block) => find(server, 'location').flatMap((block) => directive(block, 'return')).concat(directive(server, 'return'));
+  const plain = configFor('static', 'host', { wwwRedirect: 'to-apex', publicHttpPort: 8000, publicHttpsPort: 9443, realIp: 'custom', trustedProxies: ['10.0.0.0/8'] });
+  assert.ok(find(http(plain), 'map').some((block) => block.args === '$forwarded_proto $forwarded_port_suffix'));
+  const suffix = find(http(plain), 'map').find((block) => block.args === '$forwarded_proto $forwarded_port_suffix')!;
+  assert.deepEqual(suffix.directives, [
+    { name: 'default', args: '":8000"' },
+    { name: 'https', args: '":9443"' }
+  ]);
+  assert.deepEqual(returns(aliasServer(plain, 'www.example.com', false)), ['301 $forwarded_proto://example.com$forwarded_port_suffix$request_uri']);
+  const standard = find(http(configFor('static', 'host', { wwwRedirect: 'to-apex' })), 'map').find((block) => block.args === '$scheme $forwarded_port_suffix')!;
+  assert.deepEqual(standard.directives, [
+    { name: 'default', args: '""' },
+    { name: 'https', args: '""' }
+  ]);
+
+  for (const publicHttpsPort of [443, 9443]) {
+    const secure = configFor('static', 'host', { ...MANUAL_TLS, wwwRedirect: 'to-www', publicHttpsPort });
+    const target = `https://www.example.com${publicHttpsPort === 443 ? '' : ':9443'}$request_uri`;
+    assert.deepEqual(returns(redirectServer(secure)), [`308 ${target}`]);
+    assert.deepEqual(returns(aliasServer(secure, 'example.com', true)), [`301 ${target}`]);
+  }
+
+  assert.deepEqual(find(http(configFor('static', 'host')), 'map').filter((block) => block.args.includes('forwarded_port_suffix')), []);
+  assert.deepEqual(find(http(configFor('static', 'host', { ...MANUAL_TLS, wwwRedirect: 'to-apex' })), 'map').filter((block) => block.args.includes('forwarded_port_suffix')), []);
+});
+
+test('R19: the PROXY protocol config keeps a plain loopback listener for health probes', () => {
+  const plain = configFor('static', 'container', { realIp: 'custom', trustedProxies: ['10.0.0.0/8'], realIpHeader: 'proxy_protocol' });
+  assert.deepEqual(directive(appServer(plain), 'listen'), ['8080 proxy_protocol', '127.0.0.1:8080']);
+  const secure = configFor('static', 'container', { ...MANUAL_TLS, realIp: 'custom', trustedProxies: ['10.0.0.0/8'], realIpHeader: 'proxy_protocol' });
+  const redirect = redirectServer(secure);
+  assert.deepEqual(directive(redirect, 'listen'), ['8080 proxy_protocol', '127.0.0.1:8080']);
+  assert.deepEqual(location(redirect, '= /healthz').directives, [
+    { name: 'access_log', args: 'off' },
+    { name: 'return', args: '204' }
+  ]);
+  assert.doesNotMatch(configFor('static', 'container'), /127\.0\.0\.1:8080/);
+  assert.doesNotMatch(configFor('static', 'container', { realIp: 'custom', trustedProxies: ['10.0.0.0/8'] }), /127\.0\.0\.1:8080/);
+});
+
+test('R23: gzipStatic alone still sets gzip_vary and gzip_proxied any', () => {
+  const globals = http(configFor('static', 'host', { gzip: false, gzipStatic: true }));
+  assert.deepEqual(directive(globals, 'gzip'), []);
+  assert.deepEqual(directive(globals, 'gzip_static'), ['on']);
+  assert.deepEqual(directive(globals, 'gzip_vary'), ['on']);
+  assert.deepEqual(directive(globals, 'gzip_proxied'), ['any']);
 });
 
 test('B8/A3: redirects use the explicit name and the public HTTPS port', () => {
@@ -458,14 +532,14 @@ test('R6: wwwRedirect creates an alias server that redirects to the canonical na
   const toApex = configFor('static', 'host', { wwwRedirect: 'to-apex' });
   const alias = aliasServer(toApex, 'www.example.com', false);
   assert.deepEqual(directive(alias, 'server_name'), ['www.example.com']);
-  assert.deepEqual(directive(alias, 'return'), ['301 http://example.com$request_uri']);
+  assert.deepEqual(directive(location(alias, '/'), 'return'), ['301 $scheme://example.com$forwarded_port_suffix$request_uri']);
   assert.deepEqual(directive(appServer(toApex, 'example.com'), 'server_name'), ['example.com']);
 
   const toWww = configFor('static', 'host', { wwwRedirect: 'to-www' });
   assert.deepEqual(directive(appServer(toWww, 'www.example.com'), 'server_name'), ['www.example.com']);
   assert.deepEqual(directive(appServer(toWww, 'www.example.com'), 'root'), ['/var/www/example.com/public']);
   const apexAlias = aliasServer(toWww, 'example.com', false);
-  assert.deepEqual(directive(apexAlias, 'return'), ['301 http://www.example.com$request_uri']);
+  assert.deepEqual(directive(location(apexAlias, '/'), 'return'), ['301 $scheme://www.example.com$forwarded_port_suffix$request_uri']);
 
   const manual = configFor('static', 'host', { ...MANUAL_TLS, wwwRedirect: 'to-apex', hsts: 'host' });
   const tlsAlias = aliasServer(manual, 'www.example.com', true);
@@ -536,7 +610,7 @@ test('C1: real client IP from Cloudflare, a custom proxy, or the PROXY protocol'
   const protocol = configFor('proxy', 'host', { ...MANUAL_TLS, realIp: 'custom', trustedProxies: ['10.0.0.0/8'], realIpHeader: 'proxy_protocol', wwwRedirect: 'to-apex' });
   assert.deepEqual(directive(http(protocol), 'real_ip_header'), ['proxy_protocol']);
   for (const server of servers(protocol)) {
-    for (const listen of directive(server, 'listen')) {
+    for (const listen of directive(server, 'listen').filter((value) => !value.startsWith('127.0.0.1'))) {
       assert.match(listen, /proxy_protocol/, listen);
     }
   }
@@ -763,18 +837,32 @@ test('generateDefaultServer', () => {
   assert.throws(() => generateDefaultServer(0), /Invalid default server port/);
 });
 
-test('R7: deploy steps define the certificate bootstrap and the container volume', () => {
+test('R7/R20: deploy steps define the certificate bootstrap and the container volume', () => {
+  const titles = (steps: { title: string }[]) => steps.map((step) => step.title);
   const manualHost = deploySteps({ ...defaultsFor('static', 'host'), ...MANUAL_TLS, wwwRedirect: 'to-apex' } as Options);
-  assert.ok(manualHost.length >= 5);
-  const first = manualHost.find((step) => step.title.startsWith('Get the first certificate'))!;
-  assert.match(first.command!, /certbot certonly --webroot -w \/var\/www\/example\.com\/public -d example\.com -d www\.example\.com/);
-  assert.match(first.note!, /HTTPS set to Off/);
+  const names = titles(manualHost);
+  assert.match(manualHost[0]!.note!, /set HTTPS to Off/);
+  assert.equal(manualHost.find((step) => step.title === 'Create the challenge folder')!.command, 'sudo mkdir -p /var/www/_letsencrypt');
+  const first = manualHost.find((step) => step.title === 'Get the first certificate')!;
+  assert.equal(first.command, 'sudo certbot certonly --webroot -w /var/www/_letsencrypt -d example.com -d www.example.com');
+  assert.ok(names.indexOf('Reload NGINX') < names.indexOf('Get the first certificate'), 'certbot runs after the HTTPS-off config is live');
+  assert.ok(names.indexOf('Get the first certificate') < names.findIndex((title) => title.startsWith('Switch HTTPS')));
+  assert.ok(names.findIndex((title) => title.startsWith('Switch HTTPS')) < names.indexOf('Renew certificates and reload NGINX'));
   assert.ok(manualHost.some((step) => step.command === 'sudo nginx -t'));
-  assert.ok(manualHost.some((step) => step.command === 'sudo systemctl reload nginx'));
-  assert.ok(manualHost.findIndex((step) => step.title.startsWith('Get the first')) < manualHost.findIndex((step) => step.command === 'sudo nginx -t'));
+  assert.match(manualHost.find((step) => step.title.startsWith('Switch HTTPS'))!.note!, /\/etc\/nginx\/tls\/fullchain\.pem/);
 
   const proxyHost = deploySteps({ ...defaultsFor('proxy', 'host'), ...MANUAL_TLS } as Options);
-  assert.match(proxyHost.find((step) => step.title.startsWith('Get the first certificate'))!.command!, /--standalone/);
+  assert.doesNotMatch(JSON.stringify(proxyHost), /--standalone/);
+  assert.match(proxyHost.find((step) => step.title === 'Get the first certificate')!.command!, /--webroot -w \/var\/www\/_letsencrypt/);
+
+  const manualContainer = deploySteps({ ...defaultsFor('spa', 'container'), ...MANUAL_TLS } as Options);
+  const containerNames = titles(manualContainer);
+  assert.match(manualContainer[0]!.note!, /set HTTPS to Off/);
+  assert.ok(containerNames.indexOf('Start the container') < containerNames.indexOf('Get the first certificate'));
+  const start = manualContainer.find((step) => step.title === 'Start the container')!.command!;
+  assert.match(start, /-v "\$PWD\/tls:\/etc\/nginx\/tls:ro"/);
+  assert.match(start, /-v "\$PWD\/acme-challenge:\/var\/cache\/nginx\/acme-challenge:ro"/);
+  assert.match(manualContainer.find((step) => step.title === 'Get the first certificate')!.command!, /certbot\/certbot certonly --webroot -w \/acme -d example\.com/);
 
   const acmeContainer = deploySteps({ ...defaultsFor('proxy', 'container'), ...ACME, http3: true } as Options);
   const volume = acmeContainer.find((step) => step.title.startsWith('Create a volume'))!;
@@ -791,12 +879,9 @@ test('R7: deploy steps define the certificate bootstrap and the container volume
   assert.ok(acmeHost.some((step) => /nginx-module-acme/.test(step.command ?? '')));
   assert.ok(acmeHost.some((step) => /acme-letsencrypt/.test(step.command ?? '')));
 
-  const containerManual = deploySteps({ ...defaultsFor('spa', 'container'), ...MANUAL_TLS } as Options);
-  assert.match(containerManual.find((step) => step.title === 'Start the container')!.command!, /-v "\$PWD\/tls:\/etc\/nginx\/tls:ro"/);
-
   const cloudflare = deploySteps({ ...defaultsFor('proxy', 'host'), ...MANUAL_TLS, realIp: 'cloudflare' } as Options);
   assert.match(cloudflare.find((step) => step.title.includes('Cloudflare'))!.note!, /Full \(strict\)/);
-  for (const step of [...manualHost, ...acmeContainer, ...containerManual]) {
+  for (const step of [...manualHost, ...acmeContainer, ...manualContainer]) {
     assert.ok(step.title.length > 0);
     assert.ok(step.command || step.note, step.title);
   }
@@ -822,7 +907,7 @@ test('warnings explain the risky choices and carry the option key', () => {
   assert.match(find(risky, 'rateLimit')!.message, /real client IP/);
   assert.match(find(risky, 'wwwRedirect')!.message, /both/);
   const behindProtocol = warnings({ ...defaultsFor('proxy', 'host'), realIp: 'custom', trustedProxies: ['10.0.0.1'], realIpHeader: 'proxy_protocol' } as Options);
-  assert.match(find(behindProtocol, 'realIpHeader')!.message, /health check/);
+  assert.match(find(behindProtocol, 'realIpHeader')!.message, /127\.0\.0\.1:80/);
   assert.equal(find(risky, 'ipv6')?.level, 'info');
   assert.equal(find(warnings({ ...defaultsFor('static', 'host'), ...ACME } as Options), 'https')?.level, 'warn');
   assert.deepEqual(warnings(defaultsFor('static', 'container') as Options).filter((warning) => warning.level === 'warn'), []);

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // Starts the HTTP/3 config. It always checks the UDP listener and the Alt-Svc header.
-// When a curl with HTTP/3 support is available (HTTP3_CURL_IMAGE, default ymuski/curl-http3), it also
-// makes a real HTTP/3 request. Without such a curl the request is skipped and the script says so.
+// It also needs a curl with HTTP/3 support (HTTP3_CURL_IMAGE, default ymuski/curl-http3), and it
+// makes a real HTTP/3 request and fails without such a curl (unless ALLOW_NO_HTTP3_CLIENT=1).
 import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -49,7 +49,12 @@ await runSmoke(smoke, async () => {
   assert(/:20FB /i.test(sockets), `no UDP listener on 8443 (0x20FB):\n${sockets}`);
 
   if (!curlSupportsHttp3()) {
-    process.stdout.write(`PASS HTTP/3 config starts, UDP 8443 is bound, and Alt-Svc is sent (real HTTP/3 request skipped: no curl with HTTP/3 in ${CURL_IMAGE})\n`);
+    // A missing HTTP/3 client is a failure, not a quiet downgrade. The opt-out is for machines that cannot pull one.
+    if (!process.env.ALLOW_NO_HTTP3_CLIENT) {
+      throw new Error(`no curl with HTTP/3 in ${CURL_IMAGE}; set HTTP3_CURL_IMAGE, or ALLOW_NO_HTTP3_CLIENT=1 to check only the UDP listener and Alt-Svc`);
+    }
+
+    process.stdout.write('PASS (reduced) HTTP/3 config starts, UDP 8443 is bound, and Alt-Svc is sent; the real HTTP/3 request was skipped\n');
 
     return;
   }
@@ -57,11 +62,12 @@ await runSmoke(smoke, async () => {
   const output = smoke.docker([
     'run', '--rm', '--network', smoke.network, '--entrypoint', 'curl', CURL_IMAGE,
     '--silent', '--show-error', '--insecure', '--http3-only', '--connect-to', 'localhost:8443:edge:8443',
-    '--write-out', '%{http_code} %{http_version}', '--output', '/dev/null', 'https://localhost:8443/healthz'
+    '--dump-header', '-', '--output', '/dev/null', '--write-out', 'RESULT %{http_code} %{http_version}', 'https://localhost:8443/'
   ]);
-  assert(output === '204 3', `HTTP/3 request failed: ${output}`);
+  assert(/RESULT 200 3$/.test(output), `HTTP/3 request did not return 200 over HTTP/3: ${output}`);
+  assert(/^alt-svc: h3=":443"; ma=86400\r?$/im.test(output), `the HTTP/3 response lacks Alt-Svc: ${output}`);
 
-  const tcp = await request({ port: httpsPort, path: '/healthz', tls: true });
-  assert(tcp.status === 204, 'TCP fallback stopped working');
-  process.stdout.write('PASS HTTP/3 request over QUIC returned 204, and TCP still works\n');
+  const tcp = await request({ port: httpsPort, path: '/', tls: true });
+  assert(tcp.status === 200 && tcp.headers['alt-svc'] === 'h3=":443"; ma=86400', `TCP fallback broke: ${tcp.status}`);
+  process.stdout.write('PASS HTTP/3 request over QUIC returned 200 with Alt-Svc, and TCP still returns 200\n');
 });

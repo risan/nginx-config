@@ -13,7 +13,6 @@ import { isValidPort } from './addresses.ts';
 import { NGINX_IMAGE, NGINX_VERSION } from './version.ts';
 
 const INDENT = '    ';
-const ACME_CHALLENGE_ROOT = '/var/www/_letsencrypt';
 const INTERMEDIATE_CIPHERS =
   'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
 const GZIP_TYPES = [
@@ -118,6 +117,11 @@ const trustsProxy = (o: ResolvedOptions) => o.realIp !== 'off';
 
 // The scheme the visitor used, which differs from $scheme behind a TLS-terminating proxy.
 const protoVariable = (o: ResolvedOptions) => (trustsProxy(o) ? '$forwarded_proto' : '$scheme');
+
+// Where certbot writes HTTP-01 tokens. A container mounts it, because its root is read-only.
+function acmeWebroot(o: ResolvedOptions): string {
+  return isContainer(o) ? '/var/cache/nginx/acme-challenge' : '/var/www/_letsencrypt';
+}
 
 function trustedRanges(o: ResolvedOptions): string[] {
   return o.realIp === 'cloudflare' ? CLOUDFLARE_RANGES : o.trustedProxies;
@@ -275,8 +279,13 @@ function writeRealIp(w: ConfigWriter, o: ResolvedOptions): void {
   }
 }
 
+// An alias that redirects over plain HTTP must build its Location from the visitor's scheme.
+const redirectsAliasOverHttp = (o: ResolvedOptions) => !httpsOn(o) && aliasServerName(o) !== null;
+
 function writeForwardedVariables(w: ConfigWriter, o: ResolvedOptions): void {
-  if (!hasBackend(o)) {
+  const needsPort = hasBackend(o);
+  const needsSuffix = redirectsAliasOverHttp(o);
+  if (!needsPort && !needsSuffix) {
     return;
   }
 
@@ -296,11 +305,21 @@ function writeForwardedVariables(w: ConfigWriter, o: ResolvedOptions): void {
     });
   }
 
-  w.comment('The public port that visitors use, which can differ from the listen port.');
-  w.block(`map ${protoVariable(o)} $forwarded_port`, () => {
-    w.line(`default ${o.publicHttpPort};`);
-    w.line(`https ${o.publicHttpsPort};`);
-  });
+  if (needsPort) {
+    w.comment('The public port that visitors use, which can differ from the listen port.');
+    w.block(`map ${protoVariable(o)} $forwarded_port`, () => {
+      w.line(`default ${o.publicHttpPort};`);
+      w.line(`https ${o.publicHttpsPort};`);
+    });
+  }
+
+  if (needsSuffix) {
+    w.comment('The port part of a redirect: empty for the default port of the scheme.');
+    w.block(`map ${protoVariable(o)} $forwarded_port_suffix`, () => {
+      w.line(`default "${o.publicHttpPort === 80 ? '' : `:${o.publicHttpPort}`}";`);
+      w.line(`https "${o.publicHttpsPort === 443 ? '' : `:${o.publicHttpsPort}`}";`);
+    });
+  }
 
   if (o.profile === 'php') {
     w.block(`map ${protoVariable(o)} $forwarded_https`, () => {
@@ -526,10 +545,10 @@ function writeUpstream(w: ConfigWriter, o: ResolvedOptions): void {
   });
 }
 
-function writeAcmeChallengeLocation(w: ConfigWriter): void {
-  w.comment('Answer HTTP-01 challenges here, before the redirect. Let’s Encrypt only follows redirects to ports 80 and 443.');
+function writeAcmeChallengeLocation(w: ConfigWriter, o: ResolvedOptions): void {
+  w.comment('Answer certbot HTTP-01 challenges here, before any redirect or backend. Let’s Encrypt only follows redirects to ports 80 and 443.');
   w.block('location ^~ /.well-known/acme-challenge/', () => {
-    w.line(`root ${ACME_CHALLENGE_ROOT};`);
+    w.line(`root ${acmeWebroot(o)};`);
     w.line('try_files $uri =404;');
   });
 }
@@ -560,15 +579,35 @@ function writeRejectServers(w: ConfigWriter, o: ResolvedOptions): void {
   });
 }
 
+// With the PROXY protocol every connection on the public port must send the PROXY header, so
+// health probes would fail. A separate loopback address keeps plain probes working.
+function writeLoopbackHealthListener(w: ConfigWriter, o: ResolvedOptions): void {
+  if (!proxyProtocolOn(o)) {
+    return;
+  }
+
+  w.comment('Plain listener for health probes on this machine. The public listener needs the PROXY header.');
+  w.line(`listen 127.0.0.1:${o.httpPort};`);
+}
+
 function writeHttpRedirectServer(w: ConfigWriter, o: ResolvedOptions): void {
   const names = [canonicalServerName(o), aliasServerName(o)].filter((name): name is string => name !== null);
   w.blank();
   w.block('server', () => {
     listenLines(w, o, o.httpPort, tcpFlags(o, []));
+    writeLoopbackHealthListener(w, o);
     w.line(`server_name ${names.join(' ')};`);
     w.blank();
     if (o.https === 'manual') {
-      writeAcmeChallengeLocation(w);
+      writeAcmeChallengeLocation(w, o);
+      w.blank();
+    }
+
+    if (proxyProtocolOn(o)) {
+      w.block('location = /healthz', () => {
+        w.line('access_log off;');
+        w.line('return 204;');
+      });
       w.blank();
     }
 
@@ -903,6 +942,7 @@ function writeAppServer(w: ConfigWriter, o: ResolvedOptions): void {
       writeTlsListeners(w, o);
     } else {
       listenLines(w, o, o.httpPort, tcpFlags(o, []));
+      writeLoopbackHealthListener(w, o);
     }
 
     w.line(`server_name ${canonicalServerName(o)};`);
@@ -936,6 +976,11 @@ function writeAppServer(w: ConfigWriter, o: ResolvedOptions): void {
 
     w.blank();
     writeSharedLocations(w, o);
+    if (!httpsOn(o)) {
+      w.blank();
+      writeAcmeChallengeLocation(w, o);
+    }
+
     w.blank();
     if (o.profile === 'proxy') {
       writeProxyLocations(w, o);
@@ -978,10 +1023,18 @@ function writeAliasServer(w: ConfigWriter, o: ResolvedOptions): void {
     }
 
     w.blank();
-    const origin = httpsOn(o)
-      ? publicOrigin('https', canonicalServerName(o), o.publicHttpsPort)
-      : publicOrigin('http', canonicalServerName(o), o.publicHttpPort);
-    w.line(`return 301 ${origin}$request_uri;`);
+    if (httpsOn(o)) {
+      w.line(`return 301 ${publicOrigin('https', canonicalServerName(o), o.publicHttpsPort)}$request_uri;`);
+
+      return;
+    }
+
+    writeAcmeChallengeLocation(w, o);
+    w.blank();
+    w.comment('Keep the scheme and port the visitor used; a TLS-terminating proxy in front sets them.');
+    w.block('location /', () => {
+      w.line(`return 301 ${protoVariable(o)}://${canonicalServerName(o)}$forwarded_port_suffix$request_uri;`);
+    });
   });
 }
 
@@ -1079,7 +1132,7 @@ function containerRunCommand(o: ResolvedOptions): string {
   }
 
   if (o.https === 'manual') {
-    mounts.push('-v "$PWD/tls:/etc/nginx/tls:ro"', `-v "${ACME_CHALLENGE_ROOT}:${ACME_CHALLENGE_ROOT}:ro"`);
+    mounts.push('-v "$PWD/tls:/etc/nginx/tls:ro"', `-v "$PWD/acme-challenge:${acmeWebroot(o)}:ro"`);
   }
 
   if (o.https === 'acme') {
@@ -1096,33 +1149,56 @@ function containerRunCommand(o: ResolvedOptions): string {
   ].join(' ');
 }
 
+const FIRST_RUN_NOTE =
+  'For the first start, set HTTPS to Off in the builder and use that config for the steps up to the certificate. The certificate must exist before the TLS server can start.';
+
 function hostCertificateSteps(o: ResolvedOptions): DeployStep[] {
-  const first = serversFiles(o)
-    ? `sudo certbot certonly --webroot -w ${o.documentRoot} ${certbotNames(o)}`
-    : `sudo certbot certonly --standalone ${certbotNames(o)}`;
+  const names = certbotNames(o);
 
   return [
     {
-      title: 'Get the first certificate before you enable HTTPS',
-      command: first,
-      note: serversFiles(o)
-        ? 'Use a copy of this config with HTTPS set to Off for the first run. After that, switch back to this config.'
-        : 'Run it while nothing listens on port 80, then start NGINX with this config.'
+      title: 'Get the first certificate',
+      command: `sudo certbot certonly --webroot -w ${acmeWebroot(o)} ${names}`,
+      note: 'The HTTP server answers the challenge for every name it lists, in every profile, and never forwards it to your backend.'
+    },
+    {
+      title: 'Switch HTTPS to My own certificate files, then deploy again',
+      command: 'sudo nginx -t && sudo systemctl reload nginx',
+      note: `Use ${o.certificatePath} and ${o.certificateKeyPath}. Save the new config over /etc/nginx/nginx.conf first.`
     },
     {
       title: 'Renew certificates and reload NGINX',
-      command: `sudo certbot renew --deploy-hook "systemctl reload nginx"`,
-      note: `The HTTP server answers challenges from ${ACME_CHALLENGE_ROOT}. Create that folder first. Renew with: certbot certonly --webroot -w ${ACME_CHALLENGE_ROOT} ${certbotNames(o)}`
+      command: 'sudo certbot renew --deploy-hook "systemctl reload nginx"',
+      note: 'Renewal uses the same challenge location, which stays on the HTTP port.'
     }
   ];
 }
 
 function containerCertificateSteps(o: ResolvedOptions): DeployStep[] {
+  const names = certbotNames(o);
+  const certbot = `docker run --rm -v "$PWD/letsencrypt:/etc/letsencrypt" -v "$PWD/acme-challenge:/acme" certbot/certbot`;
+  const directory = `./tls/${o.serverName}`;
+
   return [
     {
-      title: 'Get the first certificate before you start the container',
-      command: `docker run --rm -p 80:80 -v "$PWD/letsencrypt:/etc/letsencrypt" certbot/certbot certonly --standalone ${certbotNames(o)}`,
-      note: `Copy fullchain.pem and privkey.pem to ./tls/${o.serverName}/. The key must be readable by user 101. The container then answers renewals from ${ACME_CHALLENGE_ROOT}.`
+      title: 'Get the first certificate',
+      command: `${certbot} certonly --webroot -w /acme ${names}`,
+      note: 'The running container (HTTPS off) answers the challenge from the mounted acme-challenge folder, for every name it lists.'
+    },
+    {
+      title: 'Copy the certificate where the config expects it',
+      command: `mkdir -p ${directory} && cp -L letsencrypt/live/${canonicalServerName(o)}/fullchain.pem letsencrypt/live/${canonicalServerName(o)}/privkey.pem ${directory}/ && chmod 644 ${directory}/privkey.pem`,
+      note: 'The key must be readable by user 101. Keep the folder private on the host.'
+    },
+    {
+      title: 'Switch HTTPS to My own certificate files, then start the container again',
+      command: `docker rm -f nginx && ${containerRunCommand(o)}`,
+      note: 'Save the new config as nginx.conf first.'
+    },
+    {
+      title: 'Renew certificates',
+      command: `${certbot} renew && cp -L letsencrypt/live/${canonicalServerName(o)}/*.pem ${directory}/ && docker kill --signal HUP nginx`,
+      note: 'Run it from a timer. The HUP signal makes NGINX reload the new files.'
     }
   ];
 }
@@ -1132,9 +1208,16 @@ export function deploySteps(input: Options): DeployStep[] {
   const steps: DeployStep[] = [];
 
   if (isContainer(o)) {
-    steps.push({ title: 'Save the config as nginx.conf next to your content', note: 'The config is complete. The container mounts it as /etc/nginx/nginx.conf.' });
+    steps.push({
+      title: 'Save the config as nginx.conf next to your content',
+      note: `The config is complete. The container mounts it as /etc/nginx/nginx.conf.${o.https === 'manual' ? ` ${FIRST_RUN_NOTE}` : ''}`
+    });
     if (o.https === 'manual') {
-      steps.push(...containerCertificateSteps(o));
+      steps.push({
+        title: 'Create the folders for certificates and challenges',
+        command: 'mkdir -p tls acme-challenge letsencrypt',
+        note: `The challenge folder is mounted read-only at ${acmeWebroot(o)}.`
+      });
     }
 
     if (o.https === 'acme') {
@@ -1154,18 +1237,25 @@ export function deploySteps(input: Options): DeployStep[] {
       command: containerRunCommand(o),
       note: o.http3 ? 'HTTP/3 uses UDP. Open the HTTPS port for UDP in your firewall too.' : undefined
     });
+    if (o.https === 'manual') {
+      steps.push(...containerCertificateSteps(o));
+    }
   } else {
     steps.push({
       title: 'Save the config',
       command: 'sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak && sudo cp nginx.conf /etc/nginx/nginx.conf',
-      note: 'The config is complete. It replaces /etc/nginx/nginx.conf, so keep the backup.'
+      note: `The config is complete. It replaces /etc/nginx/nginx.conf, so keep the backup.${o.https === 'manual' ? ` ${FIRST_RUN_NOTE}` : ''}`
     });
     if (serversFiles(o)) {
       steps.push({ title: 'Create the files folder', command: `sudo mkdir -p ${o.documentRoot}`, note: `Put your site in it. The ${o.workerUser} user needs read access.` });
     }
 
     if (o.https === 'manual') {
-      steps.push(...hostCertificateSteps(o));
+      steps.push({
+        title: 'Create the challenge folder',
+        command: `sudo mkdir -p ${acmeWebroot(o)}`,
+        note: 'The HTTP server serves /.well-known/acme-challenge/ from here.'
+      });
     }
 
     if (o.https === 'acme') {
@@ -1184,6 +1274,9 @@ export function deploySteps(input: Options): DeployStep[] {
     }
 
     steps.push({ title: 'Test the config', command: 'sudo nginx -t' }, { title: 'Reload NGINX', command: 'sudo systemctl reload nginx' });
+    if (o.https === 'manual') {
+      steps.push(...hostCertificateSteps(o));
+    }
   }
 
   if (o.realIp === 'cloudflare') {
@@ -1257,7 +1350,7 @@ export function warnings(input: Options): ConfigWarning[] {
   }
 
   if (proxyProtocolOn(o)) {
-    warn('With PROXY protocol, plain requests are rejected. The health check and ACME challenges only work through your proxy.', 'realIpHeader');
+    warn(`With PROXY protocol, plain requests to the public port are rejected. Health probes use 127.0.0.1:${o.httpPort}. ACME challenges only work through your proxy.`, 'realIpHeader');
   }
 
   if (o.statusEndpoint) {

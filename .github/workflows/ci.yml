@@ -89,8 +89,10 @@ jobs:
         run: node scripts/smoke-static.mjs nginx-config:ci
       - name: Exercise TLS redirect and certificate path
         run: node scripts/smoke-tls.mjs nginx-config:ci
-      - name: Exercise HTTP/3
+      - name: Exercise HTTP/3 with a real HTTP/3 client
         run: node scripts/smoke-http3.mjs nginx-config:ci
+      - name: Exercise DNS re-resolution of a replaced backend
+        run: node scripts/smoke-resolve.mjs nginx-config:ci
       - name: Issue a certificate from a local Pebble ACME server
         run: node scripts/smoke-acme.mjs nginx-config:ci
       - name: Validate Compose definition

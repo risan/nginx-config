@@ -93,5 +93,21 @@ await runSmoke(smoke, async () => {
   const directory = await get('/docs');
   assert(directory.status === 301 && directory.headers.location === '/docs/', `directory redirect is not relative: ${directory.headers.location}`);
 
+  // R23: with dynamic gzip off and gzip_static on, prebuilt files are still served, also behind a CDN.
+  const staticOnly = smoke.startNginx({
+    containerName: 'static-only',
+    config: generateConfig({ ...defaultsFor('static', 'container'), serverName: 'localhost', gzip: false, gzipStatic: true }),
+    mounts: [[site, '/usr/share/nginx/html']],
+    publish: [8080]
+  });
+  const staticOnlyPort = await smoke.port(staticOnly, 8080);
+  await smoke.waitFor({ port: staticOnlyPort, path: '/healthz' }, 204, 'gzip_static-only edge');
+  for (const headers of [{ 'Accept-Encoding': 'gzip' }, { 'Accept-Encoding': 'gzip', Via: '1.1 cdn.example' }]) {
+    const pre = await request({ port: staticOnlyPort, path: '/pre.txt', host: 'localhost', headers });
+    assert(pre.headers['content-encoding'] === 'gzip' && /Accept-Encoding/i.test(pre.headers.vary ?? ''), `gzip_static alone did not serve the .gz file for ${JSON.stringify(headers)}`);
+    const dynamic = await request({ port: staticOnlyPort, path: '/large.txt', host: 'localhost', headers });
+    assert(!('content-encoding' in dynamic.headers), 'a file without a .gz sibling was compressed although gzip is off');
+  }
+
   process.stdout.write('PASS security headers once per response, immutable caching, protected files, gzip with and without Via, gzip_static\n');
 });

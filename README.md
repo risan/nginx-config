@@ -52,7 +52,10 @@ defaults, so Go services use the reverse proxy profile.
 Because a container publishes 8080 as 80, the config also knows the public ports
 (`publicHttpPort`, `publicHttpsPort`). Redirects, `X-Forwarded-Port`, and the
 HTTP/3 `Alt-Svc` header use the public numbers, and relative redirects
-(`absolute_redirect off`) never leak an internal port.
+(`absolute_redirect off`) never leak an internal port. Every redirect has a fixed
+target: HTTP to HTTPS goes to `https://<name>[:public port]/...` in one hop (also
+from the www alias), and the alias with HTTPS off keeps the visitor's scheme and
+port (a trusted TLS proxy in front is believed; anyone else is not).
 
 ## Browser builder
 
@@ -75,7 +78,7 @@ npm run typecheck                      # tsc, strict, erasable syntax only
 node --test tests/*.test.ts            # structural tests, one per audit item
 node scripts/generate-examples.mjs --check
 node scripts/check-nginx-version.mjs
-node scripts/verify-nginx-configs.mjs  # nginx -t over ~100 option combinations, needs Docker
+node scripts/verify-nginx-configs.mjs  # nginx -t over ~110 option combinations, needs Docker
 node scripts/print-config.ts proxy container '{"https":"manual"}'   # inspect one config
 ```
 
@@ -189,7 +192,7 @@ permissions, log ownership, and module packages. The file includes
 | Choice | How it works |
 | --- | --- |
 | Off | HTTP only. |
-| My own certificate files | You issue and renew the certificate (for example with certbot). Issue the first certificate **before** you enable the TLS server: NGINX will not start without the files. The HTTP server answers ACME HTTP-01 challenges from `/var/www/_letsencrypt` before it redirects to HTTPS. |
+| My own certificate files | You issue and renew the certificate (for example with certbot). NGINX will not start the TLS server without the files, so deploy the config with HTTPS **Off** first, run `certbot certonly --webroot` against the challenge folder, then switch to this choice. The HTTP server (also with HTTPS off, in every profile, and for the www alias) answers `/.well-known/acme-challenge/` from `/var/www/_letsencrypt` (a container: `/var/cache/nginx/acme-challenge`, mounted from the host) before it redirects or proxies. Renewals use the same location. The Deploy tab prints every command. |
 | Automatic | The official [NGINX ACME module](https://nginx.org/en/docs/http/ngx_http_acme_module.html) gets and renews Let's Encrypt certificates (HTTP-01 only, no DNS-01). Port 80 must be reachable from the internet and a resolver must work. In a container, mount a persistent volume at `/var/cache/nginx` owned by UID 101. The module is a separate package on a server (`nginx-module-acme`, since NGINX 1.29.1) and is already in the official Docker image. A local test with Pebble covers this path. |
 
 The TLS policy follows the Mozilla/TLSRef guideline v6.0: **Intermediate** is
@@ -253,7 +256,10 @@ What the renderer does by default, and why:
 - **Real client IP.** Cloudflare (published ranges, copied 2026-10-01), another
   proxy with explicit CIDRs (never `/0`), or the PROXY protocol. Trusted proxies
   may set the client IP and `X-Forwarded-Proto`; anyone else cannot, and a
-  malformed value falls back to the real scheme.
+  malformed value falls back to the real scheme. With the PROXY protocol the
+  public listener needs the PROXY header, so the config adds a plain
+  `listen 127.0.0.1:<http port>` for health probes (the Dockerfile and Compose
+  probes keep working).
 - **Compression.** Text is compressed with a full `gzip_types` list. Woff and
   woff2 are never recompressed. `gzip_proxied any` keeps compression and
   `gzip_static` working behind CDNs, which send `Via`. gzip for PHP and proxy
